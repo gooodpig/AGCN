@@ -1,0 +1,19 @@
+﻿[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "grapher"
+version = "0.2.0"
+description = "Convert GeoGebra .ggb files to Asymptote."
+requires-python = ">=3.10"
+
+[project.scripts]
+ggb2asy = "grapher.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
