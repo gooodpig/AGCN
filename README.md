@@ -4,7 +4,7 @@
 
 工具直接读取 `.ggb` 压缩包中的 `geogebra.xml`，提取点、线、圆锥曲线、标签和样式，不依赖 GeoGebra 桌面程序。默认输出风格参考常见几何竞赛 Asymptote 文件：主体线保持黑色，同时自动保留虚实线和有意义的彩色对象。
 
-![转换效果预览](style-output-preview.png)
+![转换效果预览(题源: 2026希望联盟3-5)](style-output-preview.png)
 
 ## 主要功能
 
