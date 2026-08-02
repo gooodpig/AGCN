@@ -4,8 +4,6 @@
 
 工具直接读取 `.ggb` 压缩包中的 `geogebra.xml`，提取点、线、圆锥曲线、标签和样式，不依赖 GeoGebra 桌面程序。默认输出风格参考常见几何竞赛 Asymptote 文件：主体线保持黑色，同时自动保留虚实线和有意义的彩色对象。
 
-![转换效果预览(题源: 2026希望联盟3-5)](style-output-preview.png)
-
 ## 主要功能
 
 - 读取 GeoGebra 点、线段、直线、射线、向量、多边形和折线
@@ -67,6 +65,42 @@ ggb2asy "几何题.ggb"
 python -m grapher.cli "input.ggb" -o "output.asy"
 ```
 
+## 示例
+
+`example` 文件夹提供三个可直接转换的 GeoGebra 文件。每个示例同时包含原始 `.ggb`、生成的 `.asy` 和编译预览图。
+
+### 示例 1：自编题
+
+![示例 1：自编题](example/1-preview.png)
+
+- [GeoGebra 源文件](example/1-自编题.ggb)
+- [生成的 Asymptote 代码](example/1-自编题.asy)
+
+```powershell
+ggb2asy "example\1-自编题.ggb" -o "example\1-自编题.asy"
+```
+
+### 示例 2：2026 希望联盟 3-5
+
+![示例 2：2026 希望联盟 3-5](example/2-preview.png)
+
+- [GeoGebra 源文件](example/2-2026希望联盟3-5.ggb)
+- [生成的 Asymptote 代码](example/2-2026希望联盟3-5.asy)
+
+```powershell
+ggb2asy "example\2-2026希望联盟3-5.ggb" -o "example\2-2026希望联盟3-5.asy"
+```
+
+### 示例 3：XMO 2019 P2
+
+![示例 3：XMO 2019 P2](example/3-preview.png)
+
+- [GeoGebra 源文件](example/3-xmo19p2.ggb)
+- [生成的 Asymptote 代码](example/3-xmo19p2.asy)
+
+```powershell
+ggb2asy "example\3-xmo19p2.ggb" -o "example\3-xmo19p2.asy"
+```
 ## 常用选项
 
 ```text
@@ -138,3 +172,4 @@ python -m unittest discover -s tests -v
 - 复杂填充、透明度、图片、文本框和部分高级对象可能无法完整转换
 - 极其拥挤的图形仍可能需要手工微调少量标签
 - 一般二次曲线通过 Asymptote `contour` 绘制，编译时间会略长
+
