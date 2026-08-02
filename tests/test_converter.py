@@ -221,7 +221,7 @@ class ConverterTests(unittest.TestCase):
             path = Path(tmpdir) / "axes.ggb"
             make_ggb(path, xml)
             code = convert_ggb_to_asy(path).code
-            self.assertIn("draw(box((-8.32, -4.68), (8.32, 4.68)), invisible);", code)
+            self.assertIn("draw(box((-8.8, -4.95), (8.8, 4.95)), invisible);", code)
             self.assertIn("draw((-8, 0)--(8, 0), axispen, Arrow(3));", code)
             self.assertIn("draw((0, -4.5)--(0, 4.5), axispen, Arrow(3));", code)
 

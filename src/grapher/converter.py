@@ -636,8 +636,8 @@ def _compact_canvas_bounds(
     fallback: Viewport,
 ) -> tuple[tuple[float, float], tuple[float, float]]:
     if fallback.axes_visible:
-        x_padding = 0.02 * (fallback.x_max - fallback.x_min)
-        y_padding = 0.02 * (fallback.y_max - fallback.y_min)
+        x_padding = 0.05 * (fallback.x_max - fallback.x_min)
+        y_padding = 0.05 * (fallback.y_max - fallback.y_min)
         return (
             (fallback.x_min - x_padding, fallback.y_min - y_padding),
             (fallback.x_max + x_padding, fallback.y_max + y_padding),
