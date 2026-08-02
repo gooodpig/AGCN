@@ -37,11 +37,11 @@ draw(arc(C, 0.031124717, 123.4058, 141.01853), thinline);
 draw(arc(C, 0.031124717, 162.38727, 180), thinline);
 
 // 点与标签
-label("$B$", B, 1.5*SW);
+label("$B$", B, SW);
 label("$C$", C, 1.25*S);
-label("$H$", H, 1.5*SW);dot(H, dotpen);
-label("$E$", pE, 1.5*N);
-label("$F$", F, 1.5*N);
+label("$H$", H, SW);dot(H, dotpen);
+label("$E$", pE, NE);
+label("$F$", F, NW);
 label("$A$", A, 1.25*N);
 label("$P$", P, 1.25*S);
 

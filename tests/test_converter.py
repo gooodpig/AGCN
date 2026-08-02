@@ -228,7 +228,7 @@ class ConverterTests(unittest.TestCase):
             path = Path(tmpdir) / "circle-intersections.ggb"
             make_ggb(path, xml)
             code = convert_ggb_to_asy(path).code
-            self.assertRegex(code, r'label\("\$E\$", pE, (?:1\.\d+\*)?N\);')
+            self.assertRegex(code, r'label\("\$E\$", pE, (?:1\.\d+\*)?(?:N|NE)\);')
             self.assertRegex(code, r'label\("\$F\$", F, (?:1\.\d+\*)?(?:N|NW)\);')
     def test_global_layout_avoids_dense_label_box_overlaps(self):
         xml = """<geogebra><construction>
@@ -281,7 +281,7 @@ class ConverterTests(unittest.TestCase):
             projected_extent = (
                 abs(vector[0]) * width / 2 + abs(vector[1]) * height / 2
             )
-            distance = factor * (0.010 * scale + projected_extent)
+            distance = projected_extent + factor * 0.010 * scale
             center = (
                 point_coords[variable][0] + distance * vector[0],
                 point_coords[variable][1] + distance * vector[1],
@@ -335,7 +335,22 @@ class ConverterTests(unittest.TestCase):
             path = Path(tmpdir) / "label-offset.ggb"
             make_ggb(path, xml)
             code = convert_ggb_to_asy(path).code
-            self.assertIn('label("$A\'$", Ap, 1.5*SW);', code)
+            self.assertIn('label("$A\'$", Ap, SW);', code)
+
+    def test_manual_label_offset_yields_to_visible_geometry(self):
+        xml = """<geogebra><construction>
+          <element type="point" label="A"><show object="true" label="true"/><labelOffset x="0" y="24"/><coords x="0" y="1" z="1"/></element>
+          <element type="point" label="B"><show object="true" label="false"/><coords x="0" y="0" z="1"/></element>
+          <command name="Segment"><input a0="A" a1="B"/><output a0="s"/></command>
+          <element type="segment" label="s"><show object="true" label="false"/></element>
+        </construction></geogebra>"""
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "manual-conflict.ggb"
+            make_ggb(path, xml)
+            code = convert_ggb_to_asy(path).code
+            self.assertNotIn('label("$A$", A, S);', code)
+            self.assertIn('label("$A$", A, SW);', code)
+
     def test_derivative_function_uses_valid_asymptote_definition(self):
         xml = """<geogebra><construction>
           <expression label="f" exp="f: y = sin(x)"/>

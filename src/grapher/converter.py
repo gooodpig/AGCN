@@ -640,6 +640,23 @@ class _Generator:
 
         scale = max(view.x_max - view.x_min, view.y_max - view.y_min, 1.0)
         point_cloud = list(points.values())
+        scoring_supports: list[tuple] = []
+        support_keys: set[tuple] = set()
+        for support in supports:
+            a, b, c, first, second, mode = support
+            if mode == "line":
+                key = (mode, round(a, 7), round(b, 7), round(c, 7))
+            else:
+                endpoints = (
+                    tuple(round(value, 7) for value in first),
+                    tuple(round(value, 7) for value in second),
+                )
+                if mode == "segment":
+                    endpoints = tuple(sorted(endpoints))
+                key = (mode, *endpoints)
+            if key not in support_keys:
+                support_keys.add(key)
+                scoring_supports.append(support)
         conic_matrices = [
             matrix
             for obj in objects
@@ -684,7 +701,7 @@ class _Generator:
             projected_extent = (
                 abs(vector[0]) * width / 2 + abs(vector[1]) * height / 2
             )
-            distance = factor * (0.010 * scale + projected_extent)
+            distance = projected_extent + factor * 0.010 * scale
             center = (
                 point[0] + distance * vector[0],
                 point[1] + distance * vector[1],
@@ -758,7 +775,7 @@ class _Generator:
 
             tangent_supports = _conic_tangent_supports(point, conic_matrices, scale)
             free_sector = _largest_free_sector_direction(
-                point, [*supports, *tangent_supports], 1e-5 * scale
+                point, [*scoring_supports, *tangent_supports], 1e-5 * scale
             )
             return outward, free_sector
 
@@ -776,7 +793,7 @@ class _Generator:
             label_supports: list[tuple],
         ) -> float:
             score = 3.0 * (min(factor, 1.5) - 1.0)
-            score += 800.0 * max(0.0, factor - 1.5)
+            score += 120.0 * max(0.0, factor - 1.5)
             score -= 3.0 * (vector[0] * outward[0] + vector[1] * outward[1])
             if free_sector is not None:
                 score -= 5.0 * (
@@ -862,7 +879,7 @@ class _Generator:
             manual_offset = point_objects[name].attrs.get("label_offset", {})
             outward, free_sector = preferred_vectors(name)
             tangent_supports = _conic_tangent_supports(point, conic_matrices, scale)
-            label_supports = [*supports, *tangent_supports]
+            label_supports = [*scoring_supports, *tangent_supports]
             radial_vectors: list[tuple[float, float]] = []
             for circle_center, radius in circles:
                 radial = (point[0] - circle_center[0], point[1] - circle_center[1])
@@ -872,7 +889,7 @@ class _Generator:
                         (radial[0] / radial_length, radial[1] / radial_length)
                     )
 
-            directions: list[tuple[str, tuple[float, float], float]] = []
+            manual_preference: tuple[tuple[float, float], float] | None = None
             if "x" in manual_offset or "y" in manual_offset:
                 manual_vector = (
                     float(manual_offset.get("x", 0.0)),
@@ -888,19 +905,38 @@ class _Generator:
                     )
                     magnitude = math.hypot(*manual_vector)
                     factor = 1.5 if magnitude >= 24 else 1.25 if magnitude >= 14 else 1.0
-                    directions.append((direction, direction_vectors[direction], factor))
+                    manual_preference = direction_vectors[direction], factor
 
-            manual_layout = bool(directions)
-            if not directions:
-                for factor in (1.0, 1.25, 1.5, 1.75, 2.0):
-                    directions.extend(
-                        (direction, vector, factor)
-                        for direction, vector in direction_vectors.items()
-                    )
+            directions = [
+                (direction, vector, factor)
+                for factor in (1.0, 1.25, 1.5, 2.0, 2.5, 3.0, 4.0)
+                for direction, vector in direction_vectors.items()
+            ]
 
             name_candidates: list[dict] = []
             for direction, vector, factor in directions:
                 center, box = candidate_geometry(point, vector, factor, width, height)
+                cost = static_cost(
+                    name,
+                    vector,
+                    factor,
+                    center,
+                    box,
+                    width,
+                    height,
+                    outward,
+                    free_sector,
+                    radial_vectors,
+                    label_supports,
+                )
+                if manual_preference is not None:
+                    preferred_vector, preferred_factor = manual_preference
+                    alignment = (
+                        vector[0] * preferred_vector[0]
+                        + vector[1] * preferred_vector[1]
+                    )
+                    cost += 14.0 * (1.0 - alignment)
+                    cost += 3.0 * abs(factor - preferred_factor)
                 name_candidates.append(
                     {
                         "direction": direction,
@@ -909,19 +945,7 @@ class _Generator:
                         "box": box,
                         "width": width,
                         "height": height,
-                        "cost": 0.0 if manual_layout else static_cost(
-                            name,
-                            vector,
-                            factor,
-                            center,
-                            box,
-                            width,
-                            height,
-                            outward,
-                            free_sector,
-                            radial_vectors,
-                            label_supports,
-                        ),
+                        "cost": cost,
                     }
                 )
             candidates[name] = name_candidates
