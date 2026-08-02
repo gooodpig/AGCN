@@ -31,11 +31,10 @@ draw(A--C, thinline);
 draw(circle(A, pE, F), thinline);
 
 // 锐角标记
-markscalefactor = 0.1;
-draw(anglemark(pE,B,A));
-draw(anglemark(C,B,F));
-draw(anglemark(A,C,F));
-draw(anglemark(pE,C,B));
+draw(arc(B, 0.031124717, 38.981465, 60.049863), thinline);
+draw(arc(B, 0.031124717, 0, 21.068398), thinline);
+draw(arc(C, 0.031124717, 123.4058, 141.01853), thinline);
+draw(arc(C, 0.031124717, 162.38727, 180), thinline);
 
 // 点与标签
 label("$B$", B, 1.5*SW);

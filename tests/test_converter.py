@@ -160,7 +160,8 @@ class ConverterTests(unittest.TestCase):
             path = Path(tmpdir) / "angle.ggb"
             make_ggb(path, xml)
             code = convert_ggb_to_asy(path).code
-            self.assertIn("draw(anglemark(C,V,(2*V-A)));", code)
+            self.assertRegex(code, r"draw\(arc\(V, [0-9.]+, 135, 180\), thinline\);")
+            self.assertNotIn("markscalefactor", code)
 
     def test_canvas_uses_compact_geometry_bounds_and_dense_labels_are_offset(self):
         xml = """<geogebra>
@@ -247,6 +248,8 @@ class ConverterTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
 
 
 

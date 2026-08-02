@@ -334,6 +334,7 @@ def _acute_anglemark(
     names: list[str],
     points: dict[str, tuple[float, float]],
     name_map: _NameMap,
+    radius: float,
 ) -> str | None:
     if len(names) < 3 or not all(name in points for name in names[:3]):
         return None
@@ -346,18 +347,22 @@ def _acute_anglemark(
     if math.hypot(*first_vector) < 1e-12 or math.hypot(*third_vector) < 1e-12:
         return None
 
-    first_expr = name_map.get(first_name)
-    vertex_expr = name_map.get(vertex_name)
-    third_expr = name_map.get(third_name)
     if first_vector[0] * third_vector[0] + first_vector[1] * third_vector[1] < 0:
         first_vector = (-first_vector[0], -first_vector[1])
-        first_expr = f"(2*{vertex_expr}-{first_expr})"
     cross = first_vector[0] * third_vector[1] - first_vector[1] * third_vector[0]
     if abs(cross) < 1e-12:
         return None
     if cross < 0:
-        first_expr, third_expr = third_expr, first_expr
-    return f"draw(anglemark({first_expr},{vertex_expr},{third_expr}));"
+        first_vector, third_vector = third_vector, first_vector
+
+    start_angle = math.degrees(math.atan2(first_vector[1], first_vector[0]))
+    end_angle = math.degrees(math.atan2(third_vector[1], third_vector[0]))
+    while end_angle <= start_angle:
+        end_angle += 360
+    return (
+        f"draw(arc({name_map.get(vertex_name)}, {_format_float(radius)}, "
+        f"{_format_float(start_angle)}, {_format_float(end_angle)}), thinline);"
+    )
 
 
 def _conic_expression(matrix: dict[str, float]) -> str | None:
@@ -785,6 +790,7 @@ class _Generator:
         view = self.parsed.viewport
         circles = _circle_obstacles(objects)
         canvas_min, canvas_max = _compact_canvas_bounds(objects, points, circles, view)
+        drawing_scale = max(canvas_max[0] - canvas_min[0], canvas_max[1] - canvas_min[1])
         layout_view = Viewport(
             x_min=canvas_min[0], x_max=canvas_max[0],
             y_min=canvas_min[1], y_max=canvas_max[1],
@@ -951,7 +957,9 @@ class _Generator:
                 else:
                     warnings.append(f'Skipped function {obj.name}: expression is unavailable.')
             elif obj.kind == "angle":
-                angle = _acute_anglemark(self._visible_inputs(obj, points), points, name_map)
+                angle = _acute_anglemark(
+                    self._visible_inputs(obj, points), points, name_map, 0.03 * drawing_scale
+                )
                 if angle:
                     angle_drawings.append(angle)
             elif self.debug and obj.kind not in {"numeric", "text", "boolean"}:
@@ -1011,7 +1019,7 @@ class _Generator:
             ])
 
         if has_angle_marks and angle_drawings:
-            body.extend(['', '// 锐角标记', 'markscalefactor = 0.1;', *angle_drawings])
+            body.extend(['', '// 锐角标记', *angle_drawings])
 
         if point_lines:
             body.extend(['', '// 点与标签', *point_lines])
@@ -1037,6 +1045,8 @@ def convert_ggb_to_asy(
     if output_path is not None:
         Path(output_path).write_text(result.code, encoding="utf-8")
     return result
+
+
 
 
 
