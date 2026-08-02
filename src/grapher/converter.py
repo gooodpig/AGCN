@@ -105,7 +105,12 @@ def _rgb_pen(obj: GgbObject, preserve_style: bool, point: bool = False) -> str:
     pattern = _line_pattern(obj)
     if not preserve_style:
         if point:
-            return f"{_color_pen(color)}+dotpen" if not _is_neutral_color(color) else "dotpen"
+            default_blue = color == (21, 101, 192)
+            return (
+                f"{_color_pen(color)}+dotpen"
+                if not default_blue and not _is_neutral_color(color)
+                else "dotpen"
+            )
         pen = f"{_color_pen(color)}+thinline" if not _is_neutral_color(color) else "thinline"
         return f"{pattern}+{pen}" if pattern else pen
     color_pen = _color_pen(color)
@@ -365,6 +370,93 @@ def _acute_anglemark(
     )
 
 
+def _anglemark_from_vectors(
+    vertex: tuple[float, float],
+    first_vector: tuple[float, float],
+    second_vector: tuple[float, float],
+    radius: float,
+    vertex_expression: str | None = None,
+) -> str | None:
+    if math.hypot(*first_vector) < 1e-12 or math.hypot(*second_vector) < 1e-12:
+        return None
+    if first_vector[0] * second_vector[0] + first_vector[1] * second_vector[1] < 0:
+        first_vector = (-first_vector[0], -first_vector[1])
+    cross = first_vector[0] * second_vector[1] - first_vector[1] * second_vector[0]
+    if abs(cross) < 1e-12:
+        return None
+    if cross < 0:
+        first_vector, second_vector = second_vector, first_vector
+    start_angle = math.degrees(math.atan2(first_vector[1], first_vector[0]))
+    end_angle = math.degrees(math.atan2(second_vector[1], second_vector[0]))
+    while end_angle <= start_angle:
+        end_angle += 360
+    center = vertex_expression or _pair_literal(vertex)
+    return (
+        f"draw(arc({center}, {_format_float(radius)}, "
+        f"{_format_float(start_angle)}, {_format_float(end_angle)}), thinline);"
+    )
+
+
+def _line_geometry(
+    name: str,
+    objects_by_name: dict[str, GgbObject],
+    points: dict[str, tuple[float, float]],
+) -> tuple[tuple[float, float], tuple[float, float]] | None:
+    if name == "xAxis":
+        return (0.0, 0.0), (1.0, 0.0)
+    if name == "yAxis":
+        return (0.0, 0.0), (0.0, 1.0)
+    obj = objects_by_name.get(name)
+    if obj is None:
+        return None
+    inputs = [item for item in obj.attrs.get("inputs", []) if item in points]
+    if len(inputs) >= 2:
+        first, second = points[inputs[0]], points[inputs[1]]
+        return first, (second[0] - first[0], second[1] - first[1])
+    coords = obj.attrs.get("coords", {})
+    if all(key in coords for key in ("x", "y", "z")):
+        a, b, c = coords["x"], coords["y"], coords["z"]
+        if abs(a) > abs(b) and abs(a) > 1e-12:
+            point = (-c / a, 0.0)
+        elif abs(b) > 1e-12:
+            point = (0.0, -c / b)
+        else:
+            return None
+        return point, (b, -a)
+    return None
+
+
+def _line_anglemark(
+    names: list[str],
+    objects_by_name: dict[str, GgbObject],
+    points: dict[str, tuple[float, float]],
+    radius: float,
+) -> str | None:
+    if len(names) < 2:
+        return None
+    first = _line_geometry(names[0], objects_by_name, points)
+    second = _line_geometry(names[1], objects_by_name, points)
+    if first is None or second is None:
+        return None
+    first_point, first_vector = first
+    second_point, second_vector = second
+    denominator = (
+        first_vector[0] * second_vector[1]
+        - first_vector[1] * second_vector[0]
+    )
+    if abs(denominator) < 1e-12:
+        return None
+    offset = (second_point[0] - first_point[0], second_point[1] - first_point[1])
+    parameter = (
+        offset[0] * second_vector[1] - offset[1] * second_vector[0]
+    ) / denominator
+    vertex = (
+        first_point[0] + parameter * first_vector[0],
+        first_point[1] + parameter * first_vector[1],
+    )
+    return _anglemark_from_vectors(vertex, first_vector, second_vector, radius)
+
+
 def _conic_expression(matrix: dict[str, float]) -> str | None:
     required = [f"A{index}" for index in range(6)]
     if not all(key in matrix for key in required):
@@ -543,6 +635,14 @@ def _compact_canvas_bounds(
     circles: list[tuple[tuple[float, float], float]],
     fallback: Viewport,
 ) -> tuple[tuple[float, float], tuple[float, float]]:
+    if fallback.axes_visible:
+        x_padding = 0.02 * (fallback.x_max - fallback.x_min)
+        y_padding = 0.02 * (fallback.y_max - fallback.y_min)
+        return (
+            (fallback.x_min - x_padding, fallback.y_min - y_padding),
+            (fallback.x_max + x_padding, fallback.y_max + y_padding),
+        )
+
     coordinates = [
         points[obj.name]
         for obj in objects
@@ -647,6 +747,8 @@ def _arc_geometry(obj: GgbObject, points: dict[str, tuple[float, float]]):
     start_angle = math.atan2(start[1] - center[1], start[0] - center[0])
     end_angle = math.atan2(end[1] - center[1], end[0] - center[0])
     extent = _normalized_positive_angle(end_angle - start_angle)
+    if command == "semicircle":
+        extent = -math.pi
     if middle is not None:
         middle_angle = _normalized_positive_angle(
             math.atan2(middle[1] - center[1], middle[0] - center[0]) - start_angle
@@ -683,19 +785,34 @@ class _Generator:
 
     def _point_usage(
         self,
+        objects: list[GgbObject],
         points: dict[str, tuple[float, float]],
         supports: list[tuple],
         view: Viewport,
     ) -> dict[str, int]:
-        tolerance = max(view.x_max - view.x_min, view.y_max - view.y_min) * 1e-6
+        scale = max(view.x_max - view.x_min, view.y_max - view.y_min)
+        tolerance = scale * 1e-5
+        visible_curves = [
+            obj for obj in objects if obj.visible and obj.kind in _CONIC_KINDS
+        ]
         counts: dict[str, int] = {}
         for name, point in points.items():
-            distinct_lines = {
-                (round(support[0], 7), round(support[1], 7), round(support[2], 6))
+            distinct_geometries: set[tuple] = {
+                ("line", round(support[0], 7), round(support[1], 7), round(support[2], 6))
                 for support in supports
                 if _point_on_support(point, support, tolerance)
             }
-            counts[name] = len(distinct_lines)
+            for obj in visible_curves:
+                matrix = obj.attrs.get("matrix", {})
+                coefficients = obj.attrs.get("coefficients", [])
+                distance = (
+                    _distance_to_implicit_polynomial(point, coefficients)
+                    if coefficients
+                    else _distance_to_conic(point, matrix)
+                )
+                if distance <= tolerance:
+                    distinct_geometries.add(("curve", obj.name))
+            counts[name] = len(distinct_geometries)
         return counts
 
     def _label_layout(
@@ -1181,7 +1298,7 @@ class _Generator:
             axes_visible=view.axes_visible, grid_visible=view.grid_visible,
         )
         supports = _line_supports(objects, points)
-        counts = self._point_usage(points, supports, layout_view)
+        counts = self._point_usage(objects, points, supports, layout_view)
         label_layout = self._label_layout(
             objects, points, supports, layout_view, counts, circles
         )
@@ -1200,9 +1317,9 @@ class _Generator:
             for obj in visible_conics
         )
         has_angle_marks = any(
-            obj.visible and obj.kind == "angle" and len(self._visible_inputs(obj, points)) >= 3
-            for obj in objects
+            obj.visible and obj.kind == "angle" for obj in objects
         )
+        objects_by_name = {obj.name: obj for obj in objects}
 
         body = [
             'usepackage("amsmath");',
@@ -1370,9 +1487,14 @@ class _Generator:
                             f'Skipped function {obj.name}: expression is unavailable.'
                         )
             elif obj.kind == "angle":
+                raw_inputs = list(obj.attrs.get("inputs", []))
                 angle = _acute_anglemark(
                     self._visible_inputs(obj, points), points, name_map, 0.03 * drawing_scale
                 )
+                if angle is None:
+                    angle = _line_anglemark(
+                        raw_inputs, objects_by_name, points, 0.03 * drawing_scale
+                    )
                 if angle:
                     angle_drawings.append(angle)
             elif self.debug and obj.kind not in {"numeric", "text", "boolean"}:

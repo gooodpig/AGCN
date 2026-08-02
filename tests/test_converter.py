@@ -156,6 +156,75 @@ class ConverterTests(unittest.TestCase):
                 result.code,
             )
 
+    def test_semicircle_uses_geogebra_side(self):
+        xml = """<geogebra><construction>
+          <element type="point" label="B"><show object="true" label="false"/><coords x="-2" y="0" z="1"/></element>
+          <element type="point" label="C"><show object="true" label="false"/><coords x="2" y="0" z="1"/></element>
+          <command name="Semicircle"><input a0="B" a1="C"/><output a0="c"/></command>
+          <element type="conicpart" label="c"><show object="true" label="false"/><matrix A0="1" A1="1" A2="-4" A3="0" A4="0" A5="0"/></element>
+        </construction></geogebra>"""
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "semicircle.ggb"
+            make_ggb(path, xml)
+            code = convert_ggb_to_asy(path).code
+            self.assertIn("t*-3.1415927", code)
+
+    def test_angle_between_segment_and_axis_is_drawn(self):
+        xml = """<geogebra><construction>
+          <element type="point" label="D"><show object="true" label="false"/><coords x="-1" y="1" z="1"/></element>
+          <element type="point" label="E"><show object="true" label="false"/><coords x="1" y="-1" z="1"/></element>
+          <command name="Segment"><input a0="D" a1="E"/><output a0="f"/></command>
+          <element type="segment" label="f"><show object="true" label="false"/></element>
+          <command name="Angle"><input a0="f" a1="xAxis"/><output a0="beta"/></command>
+          <element type="angle" label="beta"><show object="true" label="false"/></element>
+        </construction></geogebra>"""
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "line-angle.ggb"
+            make_ggb(path, xml)
+            code = convert_ggb_to_asy(path).code
+            self.assertRegex(code, r"draw\(arc\(\(0, 0\), [0-9.]+, -45, 0\), thinline\);")
+
+    def test_curve_line_intersections_do_not_get_dots(self):
+        xml = """<geogebra><construction>
+          <element type="point" label="A"><show object="true" label="true"/><objColor r="21" g="101" b="192"/><coords x="1" y="0" z="1"/></element>
+          <element type="point" label="B"><show object="true" label="true"/><coords x="-1" y="0" z="1"/></element>
+          <command name="Segment"><input a0="A" a1="B"/><output a0="s"/></command>
+          <element type="segment" label="s"><show object="true" label="false"/></element>
+          <element type="conic" label="c"><show object="true" label="false"/><matrix A0="1" A1="1" A2="-1" A3="0" A4="0" A5="0"/></element>
+        </construction></geogebra>"""
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "curve-intersections.ggb"
+            make_ggb(path, xml)
+            code = convert_ggb_to_asy(path).code
+            self.assertNotIn("dot(A,", code)
+            self.assertNotIn("dot(B,", code)
+
+    def test_default_blue_point_is_black_in_automatic_style(self):
+        xml = """<geogebra><construction>
+          <element type="point" label="A"><show object="true" label="true"/><objColor r="21" g="101" b="192"/><coords x="0" y="0" z="1"/></element>
+        </construction></geogebra>"""
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "blue-point.ggb"
+            make_ggb(path, xml)
+            automatic = convert_ggb_to_asy(path).code
+            exact = convert_ggb_to_asy(path, preserve_style=True).code
+            self.assertIn("dot(A, dotpen);", automatic)
+            self.assertNotIn("rgb(0.082352941,0.39607843,0.75294118)", automatic)
+            self.assertIn("rgb(0.082352941,0.39607843,0.75294118)", exact)
+
+    def test_visible_axes_preserve_geogebra_viewport_aspect(self):
+        xml = """<geogebra>
+          <euclidianView><size width="1600" height="900"/><coordSystem xZero="800" yZero="450" scale="100" yscale="100"/><evSettings axes="true" grid="false"/></euclidianView>
+          <construction><element type="point" label="A"><show object="true" label="false"/><coords x="0" y="0" z="1"/></element></construction>
+        </geogebra>"""
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "axes.ggb"
+            make_ggb(path, xml)
+            code = convert_ggb_to_asy(path).code
+            self.assertIn("draw(box((-8.32, -4.68), (8.32, 4.68)), invisible);", code)
+            self.assertIn("draw((-8, 0)--(8, 0), axispen, Arrow(3));", code)
+            self.assertIn("draw((0, -4.5)--(0, 4.5), axispen, Arrow(3));", code)
+
     def test_example_style_header_and_reserved_point_names(self):
         xml = """<geogebra><construction>
           <element type="point" label="E"><show object="true" label="true"/><coords x="1" y="2" z="1"/></element>
