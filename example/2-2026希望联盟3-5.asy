@@ -51,19 +51,19 @@ draw(circle(A, pE, F), dashed+thinline);
 draw(circle(A, D, P), dashed+thinline);
 
 // 点与标签
-label("$A$", A, 1.5*NW);
+label("$A$", A, 1.25*NW);
 label("$B$", B, SW);
 label("$C$", C, S);
 label("$E$", pE, 1.5*S);dot(pE, rgb(0.082352941,0.39607843,0.75294118)+dotpen);
-label("$F$", F, 1.5*W);dot(F, dotpen);
-label("$M$", M, SW);
-label("$D$", D, 1.25*SW);
-label("$P$", P, 1.5*SE);dot(P, dotpen);
+label("$F$", F, 1.5*NE);dot(F, dotpen);
+label("$M$", M, 1.5*NE);
+label("$D$", D, 1.5*SW);
+label("$P$", P, 1.5*NE);dot(P, dotpen);
 label("$S$", pS, 1.5*E);
-label("$O$", pO, 1.5*N);
+label("$O$", pO, 1.25*W);
 label("$K$", K, NE);
 label("$A'$", Ap, 1.5*SW);
-label("$N$", pN, 1.25*S);
+label("$N$", pN, SE);
 label("$H$", H, S);
 
 clip(box((-13.682681, -0.065855949), (-1.1738033, 10.277141)));

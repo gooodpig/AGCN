@@ -618,13 +618,18 @@ class _Generator:
         circles: list[tuple[tuple[float, float], float]],
     ) -> dict[str, str]:
         direction_vectors = {
-            "E": (1.0, 0.0), "NE": (math.sqrt(0.5), math.sqrt(0.5)),
-            "N": (0.0, 1.0), "NW": (-math.sqrt(0.5), math.sqrt(0.5)),
-            "W": (-1.0, 0.0), "SW": (-math.sqrt(0.5), -math.sqrt(0.5)),
-            "S": (0.0, -1.0), "SE": (math.sqrt(0.5), -math.sqrt(0.5)),
+            "E": (1.0, 0.0),
+            "NE": (math.sqrt(0.5), math.sqrt(0.5)),
+            "N": (0.0, 1.0),
+            "NW": (-math.sqrt(0.5), math.sqrt(0.5)),
+            "W": (-1.0, 0.0),
+            "SW": (-math.sqrt(0.5), -math.sqrt(0.5)),
+            "S": (0.0, -1.0),
+            "SE": (math.sqrt(0.5), -math.sqrt(0.5)),
         }
         point_objects = {
-            obj.name: obj for obj in objects
+            obj.name: obj
+            for obj in objects
             if obj.kind == "point" and obj.visible and obj.name in points
         }
         labeled_names = [
@@ -636,35 +641,49 @@ class _Generator:
         scale = max(view.x_max - view.x_min, view.y_max - view.y_min, 1.0)
         point_cloud = list(points.values())
         conic_matrices = [
-            obj.attrs.get("matrix", {})
+            matrix
             for obj in objects
-            if obj.visible and obj.kind in _CONIC_KINDS and obj.attrs.get("matrix")
+            if obj.visible and obj.kind in _CONIC_KINDS
+            if (matrix := obj.attrs.get("matrix", {}))
+            if _circle_from_matrix(matrix) is None
         ]
-        layouts: dict[str, str] = {}
-        chosen_boxes: list[tuple[float, float, float, float]] = []
+        box_margin = 0.007 * scale
 
         def nearest_distance(name: str) -> float:
-            distances = [
-                math.dist(points[name], points[other])
-                for other in labeled_names if other != name
-            ]
-            return min(distances, default=scale)
+            return min(
+                (
+                    math.dist(points[name], points[other])
+                    for other in labeled_names
+                    if other != name
+                ),
+                default=scale,
+            )
+
+        def local_density(name: str) -> int:
+            return sum(
+                math.dist(points[name], points[other]) < 0.14 * scale
+                for other in labeled_names
+                if other != name
+            )
 
         def label_dimensions(name: str) -> tuple[float, float]:
-            visible_length = max(1.0, len(name.replace("'", "")) + 0.5 * name.count("'"))
+            base_name = name.replace("'", "")
+            visible_length = max(1.0, len(base_name) + 0.55 * name.count("'"))
             return (
                 (0.018 + 0.012 * visible_length) * scale,
                 0.032 * scale,
             )
 
-        def candidate_box(
+        def candidate_geometry(
             point: tuple[float, float],
             vector: tuple[float, float],
             factor: float,
             width: float,
             height: float,
         ) -> tuple[tuple[float, float], tuple[float, float, float, float]]:
-            projected_extent = abs(vector[0]) * width / 2 + abs(vector[1]) * height / 2
+            projected_extent = (
+                abs(vector[0]) * width / 2 + abs(vector[1]) * height / 2
+            )
             distance = factor * (0.010 * scale + projected_extent)
             center = (
                 point[0] + distance * vector[0],
@@ -681,32 +700,179 @@ class _Generator:
             point: tuple[float, float],
             box: tuple[float, float, float, float],
         ) -> float:
-            x_min, y_min, x_max, y_max = box
-            delta_x = max(x_min - point[0], 0.0, point[0] - x_max)
-            delta_y = max(y_min - point[1], 0.0, point[1] - y_max)
+            delta_x = max(box[0] - point[0], 0.0, point[0] - box[2])
+            delta_y = max(box[1] - point[1], 0.0, point[1] - box[3])
             return math.hypot(delta_x, delta_y)
 
         def box_overlap(
             first: tuple[float, float, float, float],
             second: tuple[float, float, float, float],
         ) -> tuple[float, float]:
-            overlap_x = min(first[2], second[2]) - max(first[0], second[0])
-            overlap_y = min(first[3], second[3]) - max(first[1], second[1])
-            return max(0.0, overlap_x), max(0.0, overlap_y)
+            return (
+                max(0.0, min(first[2], second[2]) - max(first[0], second[0])),
+                max(0.0, min(first[3], second[3]) - max(first[1], second[1])),
+            )
 
-        ordered_names = sorted(
-            labeled_names,
-            key=lambda name: (
-                counts.get(name, 0),
-                -nearest_distance(name),
-                len(name),
-            ),
-            reverse=True,
-        )
-        for name in ordered_names:
+        def box_gap(
+            first: tuple[float, float, float, float],
+            second: tuple[float, float, float, float],
+        ) -> float:
+            gap_x = max(second[0] - first[2], first[0] - second[2], 0.0)
+            gap_y = max(second[1] - first[3], first[1] - second[3], 0.0)
+            return math.hypot(gap_x, gap_y)
+
+        def pair_cost(
+            first: dict,
+            second: dict,
+        ) -> float:
+            overlap_x, overlap_y = box_overlap(first["box"], second["box"])
+            if overlap_x > 0 and overlap_y > 0:
+                first_area = first["width"] * first["height"]
+                second_area = second["width"] * second["height"]
+                overlap_ratio = overlap_x * overlap_y / max(
+                    1e-12, min(first_area, second_area)
+                )
+                return 2400.0 + 1400.0 * overlap_ratio
+            gap = box_gap(first["box"], second["box"])
+            if gap < box_margin:
+                return 90.0 * (box_margin - gap) / box_margin
+            return 0.0
+
+        def preferred_vectors(name: str) -> tuple[tuple[float, float], tuple[float, float] | None]:
+            point = points[name]
+            nearest_names = sorted(
+                (other for other in labeled_names if other != name),
+                key=lambda other: math.dist(point, points[other]),
+            )[:5]
+            if nearest_names:
+                centroid = (
+                    sum(points[other][0] for other in nearest_names) / len(nearest_names),
+                    sum(points[other][1] for other in nearest_names) / len(nearest_names),
+                )
+                outward = (point[0] - centroid[0], point[1] - centroid[1])
+            else:
+                outward = (0.0, 0.0)
+            outward_length = math.hypot(*outward)
+            if outward_length > 1e-12:
+                outward = (outward[0] / outward_length, outward[1] / outward_length)
+
+            tangent_supports = _conic_tangent_supports(point, conic_matrices, scale)
+            free_sector = _largest_free_sector_direction(
+                point, [*supports, *tangent_supports], 1e-5 * scale
+            )
+            return outward, free_sector
+
+        def static_cost(
+            name: str,
+            vector: tuple[float, float],
+            factor: float,
+            center: tuple[float, float],
+            box: tuple[float, float, float, float],
+            width: float,
+            height: float,
+            outward: tuple[float, float],
+            free_sector: tuple[float, float] | None,
+            radial_vectors: list[tuple[float, float]],
+            label_supports: list[tuple],
+        ) -> float:
+            score = 3.0 * (min(factor, 1.5) - 1.0)
+            score += 800.0 * max(0.0, factor - 1.5)
+            score -= 3.0 * (vector[0] * outward[0] + vector[1] * outward[1])
+            if free_sector is not None:
+                score -= 5.0 * (
+                    vector[0] * free_sector[0] + vector[1] * free_sector[1]
+                )
+
+            for radial in radial_vectors:
+                alignment = vector[0] * radial[0] + vector[1] * radial[1]
+                if alignment < 0:
+                    score += (14.0 if counts.get(name, 0) < 2 else 2.0) * -alignment
+                else:
+                    score -= 1.5 * alignment
+
+            for support in label_supports:
+                if _point_on_support(points[name], support, 1e-5 * scale):
+                    normal_alignment = abs(
+                        support[0] * vector[0] + support[1] * vector[1]
+                    )
+                    score += 2.5 * (1.0 - normal_alignment)
+                projected_radius = (
+                    abs(support[0]) * width / 2
+                    + abs(support[1]) * height / 2
+                )
+                clearance = _distance_to_support(center, support) - projected_radius
+                threshold = 0.006 * scale
+                if clearance <= 0:
+                    score += 150.0 + 80.0 * min(1.0, -clearance / threshold)
+                elif clearance < threshold:
+                    score += 35.0 * (threshold - clearance) / threshold
+
+            label_radius = math.hypot(width, height) / 2
+            for matrix in conic_matrices:
+                clearance = _distance_to_conic(center, matrix) - label_radius
+                threshold = 0.006 * scale
+                if clearance <= 0:
+                    score += 130.0 + 60.0 * min(1.0, -clearance / threshold)
+                elif clearance < threshold:
+                    score += 30.0 * (threshold - clearance) / threshold
+
+            for circle_center, radius in circles:
+                nearest = distance_to_box(circle_center, box)
+                farthest = max(
+                    math.dist(circle_center, corner)
+                    for corner in (
+                        (box[0], box[1]),
+                        (box[0], box[3]),
+                        (box[2], box[1]),
+                        (box[2], box[3]),
+                    )
+                )
+                threshold = 0.006 * scale
+                if nearest <= radius <= farthest:
+                    score += 150.0
+                else:
+                    clearance = min(abs(radius - nearest), abs(radius - farthest))
+                    if clearance < threshold:
+                        score += 30.0 * (threshold - clearance) / threshold
+
+            for other_point in point_cloud:
+                if math.dist(other_point, points[name]) < 1e-12:
+                    continue
+                clearance = distance_to_box(other_point, box)
+                threshold = 0.010 * scale
+                if clearance <= 1e-12:
+                    score += 260.0
+                elif clearance < threshold:
+                    score += 55.0 * (threshold - clearance) / threshold
+
+            overflow = (
+                max(0.0, view.x_min - box[0])
+                + max(0.0, box[2] - view.x_max)
+                + max(0.0, view.y_min - box[1])
+                + max(0.0, box[3] - view.y_max)
+            )
+            if overflow > 0:
+                score += 900.0 + 900.0 * overflow / (0.02 * scale)
+            return score
+
+        candidates: dict[str, list[dict]] = {}
+        for name in labeled_names:
             point = points[name]
             width, height = label_dimensions(name)
             manual_offset = point_objects[name].attrs.get("label_offset", {})
+            outward, free_sector = preferred_vectors(name)
+            tangent_supports = _conic_tangent_supports(point, conic_matrices, scale)
+            label_supports = [*supports, *tangent_supports]
+            radial_vectors: list[tuple[float, float]] = []
+            for circle_center, radius in circles:
+                radial = (point[0] - circle_center[0], point[1] - circle_center[1])
+                radial_length = math.hypot(*radial)
+                if radial_length > 1e-12 and abs(radial_length - radius) < 0.005 * scale:
+                    radial_vectors.append(
+                        (radial[0] / radial_length, radial[1] / radial_length)
+                    )
+
+            directions: list[tuple[str, tuple[float, float], float]] = []
             if "x" in manual_offset or "y" in manual_offset:
                 manual_vector = (
                     float(manual_offset.get("x", 0.0)),
@@ -722,137 +888,137 @@ class _Generator:
                     )
                     magnitude = math.hypot(*manual_vector)
                     factor = 1.5 if magnitude >= 24 else 1.25 if magnitude >= 14 else 1.0
-                    _, box = candidate_box(
-                        point, direction_vectors[direction], factor, width, height
-                    )
-                    chosen_boxes.append(box)
-                    layouts[name] = f"{factor:g}*{direction}" if factor > 1 else direction
-                    continue
+                    directions.append((direction, direction_vectors[direction], factor))
 
-            nearest_points = sorted(
-                (other for other in labeled_names if other != name),
-                key=lambda other: math.dist(point, points[other]),
-            )[:4]
-            if nearest_points:
-                centroid = (
-                    sum(points[other][0] for other in nearest_points) / len(nearest_points),
-                    sum(points[other][1] for other in nearest_points) / len(nearest_points),
+            manual_layout = bool(directions)
+            if not directions:
+                for factor in (1.0, 1.25, 1.5, 1.75, 2.0):
+                    directions.extend(
+                        (direction, vector, factor)
+                        for direction, vector in direction_vectors.items()
+                    )
+
+            name_candidates: list[dict] = []
+            for direction, vector, factor in directions:
+                center, box = candidate_geometry(point, vector, factor, width, height)
+                name_candidates.append(
+                    {
+                        "direction": direction,
+                        "factor": factor,
+                        "center": center,
+                        "box": box,
+                        "width": width,
+                        "height": height,
+                        "cost": 0.0 if manual_layout else static_cost(
+                            name,
+                            vector,
+                            factor,
+                            center,
+                            box,
+                            width,
+                            height,
+                            outward,
+                            free_sector,
+                            radial_vectors,
+                            label_supports,
+                        ),
+                    }
                 )
-                outward = (point[0] - centroid[0], point[1] - centroid[1])
-            else:
-                outward = (0.0, 0.0)
+            candidates[name] = name_candidates
 
-            tangent_supports = _conic_tangent_supports(point, conic_matrices, scale)
-            label_supports = [*supports, *tangent_supports]
-            free_sector = _largest_free_sector_direction(point, label_supports, 1e-5 * scale)
-            if free_sector:
-                outward = (
-                    outward[0] + 8.0 * free_sector[0],
-                    outward[1] + 8.0 * free_sector[1],
-                )
+        constrained_order = sorted(
+            labeled_names,
+            key=lambda name: (
+                len(candidates[name]) == 1,
+                counts.get(name, 0),
+                local_density(name),
+                -nearest_distance(name),
+                len(name),
+            ),
+            reverse=True,
+        )
 
-            radial_vectors: list[tuple[float, float]] = []
-            for center, radius in circles:
-                radial = (point[0] - center[0], point[1] - center[1])
-                radial_length = math.hypot(*radial)
-                if radial_length > 1e-12 and abs(radial_length - radius) < 0.005 * scale:
-                    unit_radial = (radial[0] / radial_length, radial[1] / radial_length)
-                    radial_vectors.append(unit_radial)
-                    outward = (
-                        outward[0] + 1.5 * unit_radial[0],
-                        outward[1] + 1.5 * unit_radial[1],
-                    )
-            outward_norm = math.hypot(*outward)
-            if outward_norm > 1e-12:
-                outward = (outward[0] / outward_norm, outward[1] / outward_norm)
-
-            best_direction = "NE"
-            best_factor = 1.0
-            best_box = candidate_box(point, direction_vectors[best_direction], 1.0, width, height)[1]
-            best_score = float("inf")
-            for factor in (1.0, 1.25, 1.5):
-                for direction, vector in direction_vectors.items():
-                    center, box = candidate_box(point, vector, factor, width, height)
-                    score = 1.4 * (factor - 1.0)
-                    score -= 4.0 * (vector[0] * outward[0] + vector[1] * outward[1])
-
-                    for radial in radial_vectors:
-                        radial_alignment = vector[0] * radial[0] + vector[1] * radial[1]
-                        if radial_alignment < 0:
-                            inward_weight = 12.0 if counts.get(name, 0) < 2 else 1.5
-                            score += inward_weight * -radial_alignment
-                        else:
-                            score -= 1.5 * radial_alignment
-
-                    for support in label_supports:
-                        if _point_on_support(point, support, 1e-5 * scale):
-                            normal_alignment = abs(
-                                support[0] * vector[0] + support[1] * vector[1]
-                            )
-                            score += 1.5 * (1 - normal_alignment)
-                        distance = _distance_to_support(center, support)
-                        projected_radius = (
-                            abs(support[0]) * width / 2
-                            + abs(support[1]) * height / 2
-                        )
-                        clearance = distance - projected_radius
-                        threshold = 0.008 * scale
-                        if clearance < threshold:
-                            score += 22.0 * (threshold - clearance) / threshold
-
-                    for matrix in conic_matrices:
-                        clearance = _distance_to_conic(center, matrix) - max(width, height) / 2
-                        threshold = 0.008 * scale
-                        if clearance < threshold:
-                            score += 18.0 * (threshold - clearance) / threshold
-                    for center_circle, radius in circles:
-                        clearance = abs(math.dist(center, center_circle) - radius) - max(width, height) / 2
-                        threshold = 0.008 * scale
-                        if clearance < threshold:
-                            score += 18.0 * (threshold - clearance) / threshold
-
-                    for other_point in point_cloud:
-                        if math.dist(other_point, point) < 1e-12:
-                            continue
-                        clearance = distance_to_box(other_point, box)
-                        threshold = 0.012 * scale
-                        if clearance < threshold:
-                            score += 20.0 * (threshold - clearance) / threshold
-
-                    for other_box in chosen_boxes:
-                        overlap_x, overlap_y = box_overlap(box, other_box)
-                        if overlap_x > 0 and overlap_y > 0:
-                            overlap_area = overlap_x * overlap_y
-                            area = max(1e-12, min(width * height, (other_box[2] - other_box[0]) * (other_box[3] - other_box[1])))
-                            score += 45.0 + 35.0 * overlap_area / area
-                        else:
-                            gap_x = max(other_box[0] - box[2], box[0] - other_box[2], 0.0)
-                            gap_y = max(other_box[1] - box[3], box[1] - other_box[3], 0.0)
-                            gap = math.hypot(gap_x, gap_y)
-                            threshold = 0.008 * scale
-                            if gap < threshold:
-                                score += 8.0 * (threshold - gap) / threshold
-
-                    overflow = (
-                        max(0.0, view.x_min - box[0])
-                        + max(0.0, box[2] - view.x_max)
-                        + max(0.0, view.y_min - box[1])
-                        + max(0.0, box[3] - view.y_max)
-                    )
-                    if overflow > 0:
-                        score += 40.0 * overflow / (0.02 * scale)
-
-                    if score < best_score:
-                        best_score = score
-                        best_direction = direction
-                        best_factor = factor
-                        best_box = box
-
-            chosen_boxes.append(best_box)
-            layouts[name] = (
-                f"{best_factor:g}*{best_direction}"
-                if best_factor > 1 else best_direction
+        def assignment_cost(assignment: dict[str, int]) -> float:
+            total = sum(
+                candidates[name][index]["cost"]
+                for name, index in assignment.items()
             )
+            for position, first_name in enumerate(labeled_names):
+                first = candidates[first_name][assignment[first_name]]
+                for second_name in labeled_names[position + 1:]:
+                    second = candidates[second_name][assignment[second_name]]
+                    total += pair_cost(first, second)
+            return total
+
+        def candidate_cost(
+            name: str,
+            index: int,
+            assignment: dict[str, int],
+        ) -> float:
+            candidate = candidates[name][index]
+            return candidate["cost"] + sum(
+                pair_cost(candidate, candidates[other][other_index])
+                for other, other_index in assignment.items()
+                if other != name
+            )
+
+        def greedy_assignment(order: list[str]) -> dict[str, int]:
+            assignment: dict[str, int] = {}
+            for name in order:
+                assignment[name] = min(
+                    range(len(candidates[name])),
+                    key=lambda index: (
+                        candidate_cost(name, index, assignment),
+                        index,
+                    ),
+                )
+            return assignment
+
+        def optimize(assignment: dict[str, int], order: list[str]) -> dict[str, int]:
+            for sweep in range(14):
+                changed = False
+                sweep_order = order if sweep % 2 == 0 else list(reversed(order))
+                for name in sweep_order:
+                    best_index = min(
+                        range(len(candidates[name])),
+                        key=lambda index: (
+                            candidate_cost(name, index, assignment),
+                            index,
+                        ),
+                    )
+                    if best_index != assignment[name]:
+                        assignment[name] = best_index
+                        changed = True
+                if not changed:
+                    break
+            return assignment
+
+        seed_orders = [
+            constrained_order,
+            list(reversed(constrained_order)),
+            labeled_names,
+            list(reversed(labeled_names)),
+        ]
+        assignments = [
+            optimize(greedy_assignment(order), constrained_order)
+            for order in seed_orders
+        ]
+        independent = {
+            name: min(
+                range(len(candidates[name])),
+                key=lambda index: (candidates[name][index]["cost"], index),
+            )
+            for name in labeled_names
+        }
+        assignments.append(optimize(independent, constrained_order))
+        best_assignment = min(assignments, key=assignment_cost)
+
+        layouts: dict[str, str] = {}
+        for name in labeled_names:
+            selected = candidates[name][best_assignment[name]]
+            factor = selected["factor"]
+            direction = selected["direction"]
+            layouts[name] = f"{factor:g}*{direction}" if factor > 1 else direction
         return layouts
 
     def build(self) -> AsyResult:
@@ -1140,34 +1306,3 @@ def convert_ggb_to_asy(
     if output_path is not None:
         Path(output_path).write_text(result.code, encoding="utf-8")
     return result
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

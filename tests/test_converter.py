@@ -1,6 +1,8 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from zipfile import ZipFile
+import math
+import re
 import sys
 import unittest
 
@@ -227,7 +229,81 @@ class ConverterTests(unittest.TestCase):
             make_ggb(path, xml)
             code = convert_ggb_to_asy(path).code
             self.assertRegex(code, r'label\("\$E\$", pE, (?:1\.\d+\*)?N\);')
-            self.assertRegex(code, r'label\("\$F\$", F, (?:1\.\d+\*)?N?W\);')
+            self.assertRegex(code, r'label\("\$F\$", F, (?:1\.\d+\*)?(?:N|NW)\);')
+    def test_global_layout_avoids_dense_label_box_overlaps(self):
+        xml = """<geogebra><construction>
+          <element type="point" label="A"><show object="true" label="true"/><coords x="0" y="0" z="1"/></element>
+          <element type="point" label="B"><show object="true" label="true"/><coords x="0.08" y="0.02" z="1"/></element>
+          <element type="point" label="C"><show object="true" label="true"/><coords x="-0.08" y="0.03" z="1"/></element>
+          <element type="point" label="D"><show object="true" label="true"/><coords x="0.02" y="0.1" z="1"/></element>
+          <element type="point" label="E"><show object="true" label="true"/><coords x="-0.02" y="-0.1" z="1"/></element>
+          <element type="point" label="F"><show object="true" label="true"/><coords x="0.1" y="-0.08" z="1"/></element>
+          <element type="point" label="Z"><show object="true" label="false"/><coords x="4" y="4" z="1"/></element>
+        </construction></geogebra>"""
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "dense-labels.ggb"
+            make_ggb(path, xml)
+            code = convert_ggb_to_asy(path).code
+
+        canvas = re.search(
+            r"draw\(box\(\(([-0-9.]+), ([-0-9.]+)\), "
+            r"\(([-0-9.]+), ([-0-9.]+)\)\), invisible\);",
+            code,
+        )
+        self.assertIsNotNone(canvas)
+        scale = max(
+            float(canvas.group(3)) - float(canvas.group(1)),
+            float(canvas.group(4)) - float(canvas.group(2)),
+        )
+        point_matches = re.findall(
+            r"pair (\w+) = \(([-0-9.]+), ([-0-9.]+)\);", code
+        )
+        point_coords = {
+            name: (float(x_coord), float(y_coord))
+            for name, x_coord, y_coord in point_matches
+        }
+        vectors = {
+            "E": (1.0, 0.0), "NE": (math.sqrt(0.5), math.sqrt(0.5)),
+            "N": (0.0, 1.0), "NW": (-math.sqrt(0.5), math.sqrt(0.5)),
+            "W": (-1.0, 0.0), "SW": (-math.sqrt(0.5), -math.sqrt(0.5)),
+            "S": (0.0, -1.0), "SE": (math.sqrt(0.5), -math.sqrt(0.5)),
+        }
+        boxes = []
+        for name, variable, factor_text, direction in re.findall(
+            r'label\("\$([A-F])\$", (\w+), (?:(\d+(?:\.\d+)?)\*)?'
+            r'(NE|NW|SE|SW|N|S|E|W)\);',
+            code,
+        ):
+            factor = float(factor_text or 1.0)
+            vector = vectors[direction]
+            width = 0.03 * scale
+            height = 0.032 * scale
+            projected_extent = (
+                abs(vector[0]) * width / 2 + abs(vector[1]) * height / 2
+            )
+            distance = factor * (0.010 * scale + projected_extent)
+            center = (
+                point_coords[variable][0] + distance * vector[0],
+                point_coords[variable][1] + distance * vector[1],
+            )
+            boxes.append((
+                name,
+                center[0] - width / 2,
+                center[1] - height / 2,
+                center[0] + width / 2,
+                center[1] + height / 2,
+            ))
+
+        self.assertEqual(len(boxes), 6)
+        for index, first in enumerate(boxes):
+            for second in boxes[index + 1:]:
+                overlap_x = min(first[3], second[3]) - max(first[1], second[1])
+                overlap_y = min(first[4], second[4]) - max(first[2], second[2])
+                self.assertFalse(
+                    overlap_x > 0 and overlap_y > 0,
+                    f"labels {first[0]} and {second[0]} overlap",
+                )
+
     def test_auto_style_keeps_patterns_and_real_colors_but_maps_gray_to_black(self):
         xml = """<geogebra><construction>
           <element type="point" label="A"><show object="true" label="false"/><coords x="0" y="0" z="1"/></element>
@@ -288,15 +364,3 @@ class ConverterTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
-
-
-
-
-
-
-
-
-
-
-

@@ -41,7 +41,7 @@ label("$B$", B, 1.5*SW);
 label("$C$", C, 1.25*S);
 label("$H$", H, 1.5*SW);dot(H, dotpen);
 label("$E$", pE, 1.5*N);
-label("$F$", F, NW);
+label("$F$", F, 1.5*N);
 label("$A$", A, 1.25*N);
 label("$P$", P, 1.25*S);
 
