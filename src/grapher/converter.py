@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from dataclasses import dataclass
 import math
@@ -623,34 +623,89 @@ class _Generator:
             "W": (-1.0, 0.0), "SW": (-math.sqrt(0.5), -math.sqrt(0.5)),
             "S": (0.0, -1.0), "SE": (math.sqrt(0.5), -math.sqrt(0.5)),
         }
+        point_objects = {
+            obj.name: obj for obj in objects
+            if obj.kind == "point" and obj.visible and obj.name in points
+        }
         labeled_names = [
-            obj.name for obj in objects
-            if obj.kind == "point" and obj.visible and obj.label_visible and obj.name in points
+            name for name, obj in point_objects.items() if obj.label_visible
         ]
         if not labeled_names:
             return {}
+
         scale = max(view.x_max - view.x_min, view.y_max - view.y_min, 1.0)
-        point_cloud = [points[name] for name in labeled_names]
-        point_objects = {obj.name: obj for obj in objects if obj.kind == "point"}
+        point_cloud = list(points.values())
         conic_matrices = [
             obj.attrs.get("matrix", {})
             for obj in objects
             if obj.visible and obj.kind in _CONIC_KINDS and obj.attrs.get("matrix")
         ]
         layouts: dict[str, str] = {}
-        chosen_anchors: list[tuple[float, float]] = []
+        chosen_boxes: list[tuple[float, float, float, float]] = []
 
         def nearest_distance(name: str) -> float:
-            others = [math.dist(points[name], points[other]) for other in labeled_names if other != name]
-            return min(others, default=scale)
+            distances = [
+                math.dist(points[name], points[other])
+                for other in labeled_names if other != name
+            ]
+            return min(distances, default=scale)
+
+        def label_dimensions(name: str) -> tuple[float, float]:
+            visible_length = max(1.0, len(name.replace("'", "")) + 0.5 * name.count("'"))
+            return (
+                (0.018 + 0.012 * visible_length) * scale,
+                0.032 * scale,
+            )
+
+        def candidate_box(
+            point: tuple[float, float],
+            vector: tuple[float, float],
+            factor: float,
+            width: float,
+            height: float,
+        ) -> tuple[tuple[float, float], tuple[float, float, float, float]]:
+            projected_extent = abs(vector[0]) * width / 2 + abs(vector[1]) * height / 2
+            distance = factor * (0.010 * scale + projected_extent)
+            center = (
+                point[0] + distance * vector[0],
+                point[1] + distance * vector[1],
+            )
+            return center, (
+                center[0] - width / 2,
+                center[1] - height / 2,
+                center[0] + width / 2,
+                center[1] + height / 2,
+            )
+
+        def distance_to_box(
+            point: tuple[float, float],
+            box: tuple[float, float, float, float],
+        ) -> float:
+            x_min, y_min, x_max, y_max = box
+            delta_x = max(x_min - point[0], 0.0, point[0] - x_max)
+            delta_y = max(y_min - point[1], 0.0, point[1] - y_max)
+            return math.hypot(delta_x, delta_y)
+
+        def box_overlap(
+            first: tuple[float, float, float, float],
+            second: tuple[float, float, float, float],
+        ) -> tuple[float, float]:
+            overlap_x = min(first[2], second[2]) - max(first[0], second[0])
+            overlap_y = min(first[3], second[3]) - max(first[1], second[1])
+            return max(0.0, overlap_x), max(0.0, overlap_y)
 
         ordered_names = sorted(
             labeled_names,
-            key=lambda name: (counts.get(name, 0), -nearest_distance(name)),
+            key=lambda name: (
+                counts.get(name, 0),
+                -nearest_distance(name),
+                len(name),
+            ),
             reverse=True,
         )
         for name in ordered_names:
             point = points[name]
+            width, height = label_dimensions(name)
             manual_offset = point_objects[name].attrs.get("label_offset", {})
             if "x" in manual_offset or "y" in manual_offset:
                 manual_vector = (
@@ -658,27 +713,22 @@ class _Generator:
                     -float(manual_offset.get("y", 0.0)),
                 )
                 if math.hypot(*manual_vector) > 1e-9:
-                    best_direction = max(
+                    direction = max(
                         direction_vectors,
-                        key=lambda direction: (
-                            direction_vectors[direction][0] * manual_vector[0]
-                            + direction_vectors[direction][1] * manual_vector[1]
+                        key=lambda candidate: (
+                            direction_vectors[candidate][0] * manual_vector[0]
+                            + direction_vectors[candidate][1] * manual_vector[1]
                         ),
                     )
                     magnitude = math.hypot(*manual_vector)
                     factor = 1.5 if magnitude >= 24 else 1.25 if magnitude >= 14 else 1.0
-                    layouts[name] = f"{factor:g}*{best_direction}" if factor > 1 else best_direction
-                    vector = direction_vectors[best_direction]
-                    chosen_anchors.append((
-                        point[0] + 0.032 * scale * factor * vector[0],
-                        point[1] + 0.032 * scale * factor * vector[1],
-                    ))
+                    _, box = candidate_box(
+                        point, direction_vectors[direction], factor, width, height
+                    )
+                    chosen_boxes.append(box)
+                    layouts[name] = f"{factor:g}*{direction}" if factor > 1 else direction
                     continue
 
-            tangent_supports = _conic_tangent_supports(point, conic_matrices, scale)
-            nearest = nearest_distance(name)
-            crowd_factor = 1.5 if nearest < 0.025 * scale else 1.25 if nearest < 0.05 * scale else 1.0
-            offset = 0.036 * scale * crowd_factor
             nearest_points = sorted(
                 (other for other in labeled_names if other != name),
                 key=lambda other: math.dist(point, points[other]),
@@ -692,12 +742,13 @@ class _Generator:
             else:
                 outward = (0.0, 0.0)
 
+            tangent_supports = _conic_tangent_supports(point, conic_matrices, scale)
             label_supports = [*supports, *tangent_supports]
             free_sector = _largest_free_sector_direction(point, label_supports, 1e-5 * scale)
             if free_sector:
                 outward = (
-                    outward[0] + 12.0 * free_sector[0],
-                    outward[1] + 12.0 * free_sector[1],
+                    outward[0] + 8.0 * free_sector[0],
+                    outward[1] + 8.0 * free_sector[1],
                 )
 
             radial_vectors: list[tuple[float, float]] = []
@@ -708,78 +759,100 @@ class _Generator:
                     unit_radial = (radial[0] / radial_length, radial[1] / radial_length)
                     radial_vectors.append(unit_radial)
                     outward = (
-                        outward[0] + 2.5 * unit_radial[0],
-                        outward[1] + 2.5 * unit_radial[1],
+                        outward[0] + 1.5 * unit_radial[0],
+                        outward[1] + 1.5 * unit_radial[1],
                     )
             outward_norm = math.hypot(*outward)
             if outward_norm > 1e-12:
                 outward = (outward[0] / outward_norm, outward[1] / outward_norm)
 
             best_direction = "NE"
-            best_anchor = point
+            best_factor = 1.0
+            best_box = candidate_box(point, direction_vectors[best_direction], 1.0, width, height)[1]
             best_score = float("inf")
-            for direction, vector in direction_vectors.items():
-                anchor = (point[0] + offset * vector[0], point[1] + offset * vector[1])
-                score = -10.0 * (vector[0] * outward[0] + vector[1] * outward[1])
-                for radial in radial_vectors:
-                    radial_alignment = vector[0] * radial[0] + vector[1] * radial[1]
-                    if radial_alignment < 0:
-                        score += 18.0 * -radial_alignment
-                    else:
-                        score -= 3.0 * radial_alignment
+            for factor in (1.0, 1.25, 1.5):
+                for direction, vector in direction_vectors.items():
+                    center, box = candidate_box(point, vector, factor, width, height)
+                    score = 1.4 * (factor - 1.0)
+                    score -= 4.0 * (vector[0] * outward[0] + vector[1] * outward[1])
 
-                direction_penalty = 0.0
-                nearby_line_penalty = 0.0
-                for support in label_supports:
-                    if _point_on_support(point, support, 1e-5 * scale):
-                        normal_alignment = abs(support[0] * vector[0] + support[1] * vector[1])
-                        direction_penalty += 3.5 * (1 - normal_alignment)
-                    distance = _distance_to_support(anchor, support)
-                    threshold = 0.035 * scale
-                    if distance < threshold:
-                        nearby_line_penalty += 3 * (threshold - distance) / threshold
-                score += min(8.0, direction_penalty)
-                score += min(7.0, nearby_line_penalty)
-                conic_penalty = 0.0
-                for matrix in conic_matrices:
-                    distance_to_curve = _distance_to_conic(anchor, matrix)
-                    threshold = 0.04 * scale
-                    if distance_to_curve < threshold:
-                        conic_penalty += 7 * (threshold - distance_to_curve) / threshold
-                score += min(10.0, conic_penalty)
-                circle_penalty = 0.0
-                for center, radius in circles:
-                    distance_to_curve = abs(math.dist(anchor, center) - radius)
-                    threshold = 0.035 * scale
-                    if distance_to_curve < threshold:
-                        circle_penalty += 6 * (threshold - distance_to_curve) / threshold
-                score += min(8.0, circle_penalty)
+                    for radial in radial_vectors:
+                        radial_alignment = vector[0] * radial[0] + vector[1] * radial[1]
+                        if radial_alignment < 0:
+                            inward_weight = 12.0 if counts.get(name, 0) < 2 else 1.5
+                            score += inward_weight * -radial_alignment
+                        else:
+                            score -= 1.5 * radial_alignment
 
-                for other_point in point_cloud:
-                    if other_point == point:
-                        continue
-                    distance = math.dist(anchor, other_point)
-                    threshold = 0.09 * scale
-                    if distance < threshold:
-                        score += 8 * (threshold - distance) / threshold
-                for other_anchor in chosen_anchors:
-                    distance = math.dist(anchor, other_anchor)
-                    threshold = 0.10 * scale
-                    if distance < threshold:
-                        score += 14 * (threshold - distance) / threshold
+                    for support in label_supports:
+                        if _point_on_support(point, support, 1e-5 * scale):
+                            normal_alignment = abs(
+                                support[0] * vector[0] + support[1] * vector[1]
+                            )
+                            score += 1.5 * (1 - normal_alignment)
+                        distance = _distance_to_support(center, support)
+                        projected_radius = (
+                            abs(support[0]) * width / 2
+                            + abs(support[1]) * height / 2
+                        )
+                        clearance = distance - projected_radius
+                        threshold = 0.008 * scale
+                        if clearance < threshold:
+                            score += 22.0 * (threshold - clearance) / threshold
 
-                if score < best_score:
-                    best_score = score
-                    best_direction = direction
-                    best_anchor = anchor
+                    for matrix in conic_matrices:
+                        clearance = _distance_to_conic(center, matrix) - max(width, height) / 2
+                        threshold = 0.008 * scale
+                        if clearance < threshold:
+                            score += 18.0 * (threshold - clearance) / threshold
+                    for center_circle, radius in circles:
+                        clearance = abs(math.dist(center, center_circle) - radius) - max(width, height) / 2
+                        threshold = 0.008 * scale
+                        if clearance < threshold:
+                            score += 18.0 * (threshold - clearance) / threshold
 
-            chosen_anchors.append(best_anchor)
-            if crowd_factor >= 1.5:
-                layouts[name] = f"1.5*{best_direction}"
-            elif crowd_factor > 1:
-                layouts[name] = f"1.25*{best_direction}"
-            else:
-                layouts[name] = best_direction
+                    for other_point in point_cloud:
+                        if math.dist(other_point, point) < 1e-12:
+                            continue
+                        clearance = distance_to_box(other_point, box)
+                        threshold = 0.012 * scale
+                        if clearance < threshold:
+                            score += 20.0 * (threshold - clearance) / threshold
+
+                    for other_box in chosen_boxes:
+                        overlap_x, overlap_y = box_overlap(box, other_box)
+                        if overlap_x > 0 and overlap_y > 0:
+                            overlap_area = overlap_x * overlap_y
+                            area = max(1e-12, min(width * height, (other_box[2] - other_box[0]) * (other_box[3] - other_box[1])))
+                            score += 45.0 + 35.0 * overlap_area / area
+                        else:
+                            gap_x = max(other_box[0] - box[2], box[0] - other_box[2], 0.0)
+                            gap_y = max(other_box[1] - box[3], box[1] - other_box[3], 0.0)
+                            gap = math.hypot(gap_x, gap_y)
+                            threshold = 0.008 * scale
+                            if gap < threshold:
+                                score += 8.0 * (threshold - gap) / threshold
+
+                    overflow = (
+                        max(0.0, view.x_min - box[0])
+                        + max(0.0, box[2] - view.x_max)
+                        + max(0.0, view.y_min - box[1])
+                        + max(0.0, box[3] - view.y_max)
+                    )
+                    if overflow > 0:
+                        score += 40.0 * overflow / (0.02 * scale)
+
+                    if score < best_score:
+                        best_score = score
+                        best_direction = direction
+                        best_factor = factor
+                        best_box = box
+
+            chosen_boxes.append(best_box)
+            layouts[name] = (
+                f"{best_factor:g}*{best_direction}"
+                if best_factor > 1 else best_direction
+            )
         return layouts
 
     def build(self) -> AsyResult:
@@ -855,6 +928,7 @@ class _Generator:
         functions: list[str] = []
         drawings: list[str] = []
         angle_drawings: list[str] = []
+        function_names = {obj.name for obj in objects if obj.kind == "function"}
 
         for obj in objects:
             if not obj.visible or obj.kind == "point":
@@ -951,15 +1025,32 @@ class _Generator:
                 else:
                     warnings.append(f'Skipped conic {obj.name}: matrix coefficients are unavailable.')
             elif obj.kind == "function":
-                expression = _convert_function_expression(str(obj.attrs.get("expression", "")), obj.name)
-                if expression:
-                    function_name = f'f{name_map.get(obj.name)}'
-                    functions.append(f'real {function_name}(real x) {{ return {expression}; }}')
+                function_name = f'f{name_map.get(obj.name)}'
+                previous_name = obj.name[:-1] if obj.name.endswith("'") else ""
+                if previous_name in function_names:
+                    previous_function = f'f{name_map.get(previous_name)}'
+                    functions.append(
+                        f'real {function_name}(real x) {{ real h=1e-5*(1+abs(x)); '
+                        f'return ({previous_function}(x+h)-{previous_function}(x-h))/(2*h); }}'
+                    )
                     drawings.append(
                         f'draw(graph({function_name}, {_format_float(view.x_min)}, {_format_float(view.x_max)}, n=500), {pen});'
                     )
                 else:
-                    warnings.append(f'Skipped function {obj.name}: expression is unavailable.')
+                    expression = _convert_function_expression(
+                        str(obj.attrs.get("expression", "")), obj.name
+                    )
+                    if expression:
+                        functions.append(
+                            f'real {function_name}(real x) {{ return {expression}; }}'
+                        )
+                        drawings.append(
+                            f'draw(graph({function_name}, {_format_float(view.x_min)}, {_format_float(view.x_max)}, n=500), {pen});'
+                        )
+                    else:
+                        warnings.append(
+                            f'Skipped function {obj.name}: expression is unavailable.'
+                        )
             elif obj.kind == "angle":
                 angle = _acute_anglemark(
                     self._visible_inputs(obj, points), points, name_map, 0.03 * drawing_scale

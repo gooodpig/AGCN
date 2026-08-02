@@ -1,4 +1,4 @@
-﻿from pathlib import Path
+from pathlib import Path
 from tempfile import TemporaryDirectory
 from zipfile import ZipFile
 import sys
@@ -178,7 +178,8 @@ class ConverterTests(unittest.TestCase):
             code = convert_ggb_to_asy(path).code
             self.assertIn("draw(box((-0.8, -0.8), (10.8, 10.8)), invisible);", code)
             self.assertIn("clip(box((-0.8, -0.8), (10.8, 10.8)));", code)
-            self.assertIn("1.5*", code)
+            self.assertIn('label("$A$", A, SW);', code)
+            self.assertIn('label("$B$", B, SE);', code)
 
     def test_largest_free_sector_prefers_northwest(self):
         point = (0.0, 0.0)
@@ -225,8 +226,8 @@ class ConverterTests(unittest.TestCase):
             path = Path(tmpdir) / "circle-intersections.ggb"
             make_ggb(path, xml)
             code = convert_ggb_to_asy(path).code
-            self.assertIn('label("$E$", pE, N);', code)
-            self.assertIn('label("$F$", F, N);', code)
+            self.assertRegex(code, r'label\("\$E\$", pE, (?:1\.\d+\*)?N\);')
+            self.assertRegex(code, r'label\("\$F\$", F, (?:1\.\d+\*)?N?W\);')
     def test_auto_style_keeps_patterns_and_real_colors_but_maps_gray_to_black(self):
         xml = """<geogebra><construction>
           <element type="point" label="A"><show object="true" label="false"/><coords x="0" y="0" z="1"/></element>
@@ -259,6 +260,21 @@ class ConverterTests(unittest.TestCase):
             make_ggb(path, xml)
             code = convert_ggb_to_asy(path).code
             self.assertIn('label("$A\'$", Ap, 1.5*SW);', code)
+    def test_derivative_function_uses_valid_asymptote_definition(self):
+        xml = """<geogebra><construction>
+          <expression label="f" exp="f: y = sin(x)"/>
+          <element type="function" label="f"><show object="true" label="false"/></element>
+          <expression label="f&apos;" exp="f&apos;(x) = f&apos;(x)"/>
+          <element type="function" label="f&apos;"><show object="true" label="false"/></element>
+        </construction></geogebra>"""
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "derivative.ggb"
+            make_ggb(path, xml)
+            code = convert_ggb_to_asy(path).code
+            self.assertIn("real ff(real x) { return sin(x); }", code)
+            self.assertIn("real ffp(real x) { real h=1e-5*(1+abs(x));", code)
+            self.assertNotIn("return f'(x)", code)
+
     def test_output_file_and_debug_comments(self):
         with TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)

@@ -40,9 +40,9 @@ draw(arc(C, 0.031124717, 162.38727, 180), thinline);
 label("$B$", B, 1.5*SW);
 label("$C$", C, 1.25*S);
 label("$H$", H, 1.5*SW);dot(H, dotpen);
-label("$E$", pE, N);
-label("$F$", F, N);
-label("$A$", A, N);
-label("$P$", P, S);
+label("$E$", pE, 1.5*N);
+label("$F$", F, NW);
+label("$A$", A, 1.25*N);
+label("$P$", P, 1.25*S);
 
 clip(box((1.1422316, 1.5172617), (2.1797222, 2.3842205)));
