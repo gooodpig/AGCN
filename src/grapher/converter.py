@@ -378,6 +378,39 @@ def _conic_expression(matrix: dict[str, float]) -> str | None:
     return "+".join(terms).replace("+-", "-")
 
 
+def _implicit_polynomial_expression(coefficients: list[list[float]]) -> str | None:
+    values = [value for row in coefficients for value in row]
+    maximum = max((abs(value) for value in values), default=0.0)
+    if maximum < 1e-15:
+        return None
+
+    terms: list[tuple[int, int, float]] = []
+    for x_power, row in enumerate(coefficients):
+        for y_power, value in enumerate(row):
+            normalized = value / maximum
+            if abs(normalized) > 1e-12:
+                terms.append((x_power, y_power, normalized))
+    terms.sort(key=lambda item: (item[0] + item[1], item[0]), reverse=True)
+
+    rendered: list[str] = []
+    for x_power, y_power, coefficient in terms:
+        factors: list[str] = []
+        if x_power:
+            factors.append("x" if x_power == 1 else f"x^{x_power}")
+        if y_power:
+            factors.append("y" if y_power == 1 else f"y^{y_power}")
+        magnitude = abs(coefficient)
+        if factors and abs(magnitude - 1.0) < 1e-12:
+            term = "*".join(factors)
+        else:
+            term = "*".join([_format_float(magnitude), *factors])
+        if not rendered:
+            rendered.append(f"-{term}" if coefficient < 0 else term)
+        else:
+            rendered.append(("-" if coefficient < 0 else "+") + term)
+    return "".join(rendered) or None
+
+
 def _conic_value_gradient(
     matrix: dict[str, float],
     point: tuple[float, float],
@@ -421,6 +454,63 @@ def _distance_to_conic(point: tuple[float, float], matrix: dict[str, float]) -> 
     value, gradient_x, gradient_y = evaluated
     gradient_norm = math.hypot(gradient_x, gradient_y)
     return abs(value) / gradient_norm if gradient_norm > 1e-12 else float("inf")
+
+def _implicit_polynomial_value_gradient(
+    coefficients: list[list[float]],
+    point: tuple[float, float],
+) -> tuple[float, float, float] | None:
+    if not coefficients:
+        return None
+    x, y = point
+    value = 0.0
+    gradient_x = 0.0
+    gradient_y = 0.0
+    for x_power, row in enumerate(coefficients):
+        for y_power, coefficient in enumerate(row):
+            value += coefficient * x ** x_power * y ** y_power
+            if x_power:
+                gradient_x += (
+                    x_power * coefficient * x ** (x_power - 1) * y ** y_power
+                )
+            if y_power:
+                gradient_y += (
+                    y_power * coefficient * x ** x_power * y ** (y_power - 1)
+                )
+    return value, gradient_x, gradient_y
+
+
+def _implicit_polynomial_tangent_supports(
+    point: tuple[float, float],
+    polynomials: list[list[list[float]]],
+    scale: float,
+) -> list[tuple]:
+    supports: list[tuple] = []
+    for coefficients in polynomials:
+        evaluated = _implicit_polynomial_value_gradient(coefficients, point)
+        if evaluated is None:
+            continue
+        value, gradient_x, gradient_y = evaluated
+        gradient_norm = math.hypot(gradient_x, gradient_y)
+        if gradient_norm < 1e-12 or abs(value) / gradient_norm > 0.002 * scale:
+            continue
+        a = gradient_x / gradient_norm
+        b = gradient_y / gradient_norm
+        c = -(a * point[0] + b * point[1])
+        supports.append((a, b, c, None, None, "line"))
+    return supports
+
+
+def _distance_to_implicit_polynomial(
+    point: tuple[float, float],
+    coefficients: list[list[float]],
+) -> float:
+    evaluated = _implicit_polynomial_value_gradient(coefficients, point)
+    if evaluated is None:
+        return float("inf")
+    value, gradient_x, gradient_y = evaluated
+    gradient_norm = math.hypot(gradient_x, gradient_y)
+    return abs(value) / gradient_norm if gradient_norm > 1e-12 else float("inf")
+
 
 def _circle_from_matrix(matrix: dict[str, float]) -> tuple[tuple[float, float], float] | None:
     required = [f"A{index}" for index in range(6)]
@@ -664,6 +754,12 @@ class _Generator:
             if (matrix := obj.attrs.get("matrix", {}))
             if _circle_from_matrix(matrix) is None
         ]
+        implicit_polynomials = [
+            coefficients
+            for obj in objects
+            if obj.visible and obj.kind == "implicitpoly"
+            if (coefficients := obj.attrs.get("coefficients", []))
+        ]
         box_margin = 0.007 * scale
 
         def nearest_distance(name: str) -> float:
@@ -773,7 +869,12 @@ class _Generator:
             if outward_length > 1e-12:
                 outward = (outward[0] / outward_length, outward[1] / outward_length)
 
-            tangent_supports = _conic_tangent_supports(point, conic_matrices, scale)
+            tangent_supports = [
+                *_conic_tangent_supports(point, conic_matrices, scale),
+                *_implicit_polynomial_tangent_supports(
+                    point, implicit_polynomials, scale
+                ),
+            ]
             free_sector = _largest_free_sector_direction(
                 point, [*scoring_supports, *tangent_supports], 1e-5 * scale
             )
@@ -833,6 +934,17 @@ class _Generator:
                 elif clearance < threshold:
                     score += 30.0 * (threshold - clearance) / threshold
 
+            for coefficients in implicit_polynomials:
+                clearance = (
+                    _distance_to_implicit_polynomial(center, coefficients)
+                    - label_radius
+                )
+                threshold = 0.006 * scale
+                if clearance <= 0:
+                    score += 130.0 + 60.0 * min(1.0, -clearance / threshold)
+                elif clearance < threshold:
+                    score += 30.0 * (threshold - clearance) / threshold
+
             for circle_center, radius in circles:
                 nearest = distance_to_box(circle_center, box)
                 farthest = max(
@@ -878,7 +990,12 @@ class _Generator:
             width, height = label_dimensions(name)
             manual_offset = point_objects[name].attrs.get("label_offset", {})
             outward, free_sector = preferred_vectors(name)
-            tangent_supports = _conic_tangent_supports(point, conic_matrices, scale)
+            tangent_supports = [
+                *_conic_tangent_supports(point, conic_matrices, scale),
+                *_implicit_polynomial_tangent_supports(
+                    point, implicit_polynomials, scale
+                ),
+            ]
             label_supports = [*scoring_supports, *tangent_supports]
             radial_vectors: list[tuple[float, float]] = []
             for circle_center, radius in circles:
@@ -1190,10 +1307,21 @@ class _Generator:
                     warnings.append(f'Skipped conic part {obj.name}: its arc definition is unsupported.')
             elif obj.kind in _CONIC_KINDS:
                 matrix = obj.attrs.get("matrix", {})
+                coefficients = obj.attrs.get("coefficients", [])
+                polynomial_expression = _implicit_polynomial_expression(coefficients)
                 circle = _circle_from_matrix(matrix)
                 expression = _conic_expression(matrix)
                 circle_inputs = [name for name in inputs if name in points]
-                if circle and str(obj.attrs.get("command", "")).lower() == "circle" and len(circle_inputs) >= 2:
+                if polynomial_expression:
+                    function_name = f'curve{name_map.get(obj.name)}'
+                    functions.append(
+                        f'real {function_name}(real x, real y) {{ return {polynomial_expression}; }}'
+                    )
+                    drawings.append(
+                        f'draw(contour({function_name}, {_pair_literal((view.x_min, view.y_min))}, '
+                        f'{_pair_literal((view.x_max, view.y_max))}, new real[] {{0}}, 180), {pen});'
+                    )
+                elif circle and str(obj.attrs.get("command", "")).lower() == "circle" and len(circle_inputs) >= 2:
                     if len(circle_inputs) >= 3:
                         args = ', '.join(name_map.get(name) for name in circle_inputs[:3])
                         drawings.append(f'draw(circle({args}), {pen});')
@@ -1213,7 +1341,7 @@ class _Generator:
                         f'{_pair_literal((view.x_max, view.y_max))}, new real[] {{0}}, 120), {pen});'
                     )
                 else:
-                    warnings.append(f'Skipped conic {obj.name}: matrix coefficients are unavailable.')
+                    warnings.append(f'Skipped curve {obj.name}: coefficients are unavailable.')
             elif obj.kind == "function":
                 function_name = f'f{name_map.get(obj.name)}'
                 previous_name = obj.name[:-1] if obj.name.endswith("'") else ""

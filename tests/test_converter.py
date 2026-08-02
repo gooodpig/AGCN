@@ -117,6 +117,45 @@ class ConverterTests(unittest.TestCase):
             self.assertIn("real conicc(real x, real y)", code)
             self.assertIn("draw(contour(conicc, (-10, -7.5), (10, 7.5), new real[] {0}, 120), thinline);", code)
 
+    def test_parser_reads_implicit_polynomial_coefficients(self):
+        xml = """<geogebra><construction>
+          <element type="implicitpoly" label="cubic">
+            <show object="true" label="false"/>
+            <coefficients rep="array" data="[[0,0,1,0],[0],[0],[-1]]"/>
+          </element>
+        </construction></geogebra>"""
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "cubic.ggb"
+            make_ggb(path, xml)
+            parsed = parse_ggb(path)
+            self.assertEqual(
+                parsed.objects[0].attrs["coefficients"],
+                [[0.0, 0.0, 1.0, 0.0], [0.0], [0.0], [-1.0]],
+            )
+
+    def test_implicit_cubic_uses_normalized_contour(self):
+        xml = """<geogebra><construction>
+          <element type="implicitpoly" label="cubic">
+            <show object="true" label="false"/>
+            <coefficients rep="array" data="[[0,0,2,0],[0],[0],[-2]]"/>
+          </element>
+        </construction></geogebra>"""
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "cubic.ggb"
+            make_ggb(path, xml)
+            result = convert_ggb_to_asy(path, preserve_style=False)
+            self.assertEqual(result.warnings, [])
+            self.assertIn("import contour;", result.code)
+            self.assertIn(
+                "real curvecubic(real x, real y) { return -x^3+y^2; }",
+                result.code,
+            )
+            self.assertIn(
+                "draw(contour(curvecubic, (-10, -10), (10, 10), "
+                "new real[] {0}, 180), thinline);",
+                result.code,
+            )
+
     def test_example_style_header_and_reserved_point_names(self):
         xml = """<geogebra><construction>
           <element type="point" label="E"><show object="true" label="true"/><coords x="1" y="2" z="1"/></element>

@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from pathlib import Path
+import json
 import xml.etree.ElementTree as ET
 from zipfile import BadZipFile, ZipFile
 
@@ -58,6 +59,29 @@ def _numeric_attributes(node: ET.Element | None) -> dict[str, float]:
         if parsed is not None:
             result[key] = parsed
     return result
+
+
+def _coefficient_array(node: ET.Element | None) -> list[list[float]]:
+    if node is None or not node.get("data"):
+        return []
+    try:
+        raw = json.loads(node.get("data", ""))
+    except (json.JSONDecodeError, TypeError):
+        return []
+    if not isinstance(raw, list):
+        return []
+    coefficients: list[list[float]] = []
+    for row in raw:
+        if not isinstance(row, list):
+            return []
+        parsed_row: list[float] = []
+        for value in row:
+            try:
+                parsed_row.append(float(value))
+            except (TypeError, ValueError):
+                return []
+        coefficients.append(parsed_row)
+    return coefficients
 
 
 def _parse_viewport(root: ET.Element) -> Viewport:
@@ -142,6 +166,7 @@ def _parse_element(element: ET.Element, command: dict | None, expression: str | 
     attrs["matrix"] = _numeric_attributes(element.find("matrix"))
     attrs["eigenvectors"] = _numeric_attributes(element.find("eigenvectors"))
     attrs["parameters"] = _numeric_attributes(element.find("parameters"))
+    attrs["coefficients"] = _coefficient_array(element.find("coefficients"))
 
     value = element.find("value")
     if value is not None:
