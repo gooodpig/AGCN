@@ -40,8 +40,8 @@ draw(arc(C, 0.031124717, 162.38727, 180), thinline);
 label("$B$", B, 1.5*SW);
 label("$C$", C, 1.25*S);
 label("$H$", H, 1.5*SW);dot(H, dotpen);
-label("$E$", pE, S);
-label("$F$", F, SE);
+label("$E$", pE, N);
+label("$F$", F, N);
 label("$A$", A, N);
 label("$P$", P, S);
 

@@ -203,6 +203,30 @@ class ConverterTests(unittest.TestCase):
             code = convert_ggb_to_asy(path).code
             self.assertRegex(code, r'label\("\$P\$", P, (?:1\.\d+\*)?W\);')
 
+    def test_circle_intersection_labels_avoid_radial_segments(self):
+        xml = """<geogebra><construction>
+          <element type="point" label="A"><show object="true" label="false"/><coords x="1.6308193" y="2.3125954" z="1"/></element>
+          <element type="point" label="B"><show object="true" label="false"/><coords x="1.2137827" y="1.5888128" z="1"/></element>
+          <element type="point" label="C"><show object="true" label="false"/><coords x="2.1081711" y="1.5888128" z="1"/></element>
+          <element type="point" label="E"><show object="true" label="true"/><coords x="1.4657863" y="1.7927464" z="1"/></element>
+          <element type="point" label="F"><show object="true" label="true"/><coords x="1.8197207" y="1.8222409" z="1"/></element>
+          <command name="Segment"><input a0="E" a1="B"/><output a0="s1"/></command>
+          <element type="segment" label="s1"><show object="true" label="false"/></element>
+          <command name="Segment"><input a0="E" a1="C"/><output a0="s2"/></command>
+          <element type="segment" label="s2"><show object="true" label="false"/></element>
+          <command name="Segment"><input a0="F" a1="B"/><output a0="s3"/></command>
+          <element type="segment" label="s3"><show object="true" label="false"/></element>
+          <command name="Segment"><input a0="F" a1="C"/><output a0="s4"/></command>
+          <element type="segment" label="s4"><show object="true" label="false"/></element>
+          <command name="Circle"><input a0="A" a1="E" a2="F"/><output a0="circle1"/></command>
+          <element type="conic" label="circle1"><show object="true" label="false"/><matrix A0="1" A1="1" A2="6.67267621935051" A3="0" A4="-1.6243334889281469" A5="-2.028533927255674"/></element>
+        </construction></geogebra>"""
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "circle-intersections.ggb"
+            make_ggb(path, xml)
+            code = convert_ggb_to_asy(path).code
+            self.assertIn('label("$E$", pE, N);', code)
+            self.assertIn('label("$F$", F, N);', code)
     def test_auto_style_keeps_patterns_and_real_colors_but_maps_gray_to_black(self):
         xml = """<geogebra><construction>
           <element type="point" label="A"><show object="true" label="false"/><coords x="0" y="0" z="1"/></element>
@@ -248,6 +272,7 @@ class ConverterTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
 
 
 

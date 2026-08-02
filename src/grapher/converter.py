@@ -722,7 +722,11 @@ class _Generator:
                 anchor = (point[0] + offset * vector[0], point[1] + offset * vector[1])
                 score = -10.0 * (vector[0] * outward[0] + vector[1] * outward[1])
                 for radial in radial_vectors:
-                    score -= 12.0 * (vector[0] * radial[0] + vector[1] * radial[1])
+                    radial_alignment = vector[0] * radial[0] + vector[1] * radial[1]
+                    if radial_alignment < 0:
+                        score += 18.0 * -radial_alignment
+                    else:
+                        score -= 3.0 * radial_alignment
 
                 direction_penalty = 0.0
                 nearby_line_penalty = 0.0
@@ -1045,6 +1049,7 @@ def convert_ggb_to_asy(
     if output_path is not None:
         Path(output_path).write_text(result.code, encoding="utf-8")
     return result
+
 
 
 
