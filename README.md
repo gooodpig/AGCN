@@ -4,6 +4,14 @@
 
 工具直接读取 `.ggb` 压缩包中的 `geogebra.xml`，提取点、线、圆锥曲线、标签和样式，不依赖 GeoGebra 桌面程序。默认输出风格参考常见几何竞赛 Asymptote 文件：主体线保持黑色，同时自动保留虚实线和有意义的彩色对象。
 
+## 在线使用与部署
+
+- [在线转换 GeoGebra 文件](https://geogebra-to-asymptote.vercel.app/)
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fgooodpig%2Fgeogebra-asymptote-converter&root-directory=web&project-name=geogebra-asymptote-converter&repository-name=geogebra-asymptote-converter)
+
+点击按钮会克隆本仓库，并以 `web` 作为 Vercel 项目根目录进行部署。
+
 ## 主要功能
 
 - 读取 GeoGebra 点、线段、直线、射线、向量、多边形和折线
