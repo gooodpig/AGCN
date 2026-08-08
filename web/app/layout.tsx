@@ -1,0 +1,1 @@
+﻿import type {Metadata} from "next";import "./globals.css";export const metadata:Metadata={title:"GeoGebra 转 Asymptote｜在线转换器",description:"在浏览器中把 GeoGebra .ggb 转换成可编辑的 Asymptote 代码。"};export default function Layout({children}:{children:React.ReactNode}){return <html lang="zh-CN"><body>{children}</body></html>}
