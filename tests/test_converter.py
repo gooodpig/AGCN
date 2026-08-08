@@ -224,6 +224,8 @@ class ConverterTests(unittest.TestCase):
             self.assertIn("draw(box((-8.8, -4.95), (8.8, 4.95)), invisible);", code)
             self.assertIn("draw((-8, 0)--(8, 0), axispen, Arrow(3));", code)
             self.assertIn("draw((0, -4.5)--(0, 4.5), axispen, Arrow(3));", code)
+            self.assertIn('label("$x$", (8, 0), W);', code)
+            self.assertIn('label("$y$", (0, 4.5), S);', code)
 
     def test_example_style_header_and_reserved_point_names(self):
         xml = """<geogebra><construction>

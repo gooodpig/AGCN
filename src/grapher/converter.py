@@ -1549,8 +1549,8 @@ class _Generator:
                 '// 坐标轴',
                 f'draw(({_format_float(view.x_min)}, 0)--({_format_float(view.x_max)}, 0), axispen, Arrow(3));',
                 f'draw((0, {_format_float(view.y_min)})--(0, {_format_float(view.y_max)}), axispen, Arrow(3));',
-                f'label("$x$", ({_format_float(view.x_max)}, 0), E);',
-                f'label("$y$", (0, {_format_float(view.y_max)}), N);',
+                f'label("$x$", ({_format_float(view.x_max)}, 0), W);',
+                f'label("$y$", (0, {_format_float(view.y_max)}), S);',
             ])
 
         if has_angle_marks and angle_drawings:
