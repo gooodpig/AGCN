@@ -1,6 +1,6 @@
-﻿# GeoGebra → Asymptote 转换工具
+﻿# AGCN — Asymptote GeoGebra Converter Nya~
 
-将 GeoGebra `.ggb` 文件转换为结构清晰、可继续编辑的 Asymptote `.asy` 代码。
+AGCN（Asymptote GeoGebra Converter Nya~）将 GeoGebra `.ggb` 文件转换为结构清晰、可继续编辑的 Asymptote `.asy` 代码。
 
 工具直接读取 `.ggb` 压缩包中的 `geogebra.xml`，提取点、线、圆锥曲线、标签和样式，不依赖 GeoGebra 桌面程序。默认输出风格参考常见几何竞赛 Asymptote 文件：主体线保持黑色，同时自动保留虚实线和有意义的彩色对象。
 
