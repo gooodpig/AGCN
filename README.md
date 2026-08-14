@@ -124,15 +124,15 @@ ggb2asy "example\1-iran-tst-2009.ggb" -o "example\1-iran-tst-2009.asy"
 ggb2asy "example\2-2026希望联盟3-5.ggb" -o "example\2-2026希望联盟3-5.asy"
 ```
 
-### 示例 3：XMO 2019 P2
+### 示例 3：2026 IMO P2
 
-![示例 3：XMO 2019 P2](example/3-preview.png)
+![示例 3：2026 IMO P2](example/3-preview.png)
 
-- [GeoGebra 源文件](example/3-xmo19p2.ggb)
-- [生成的 Asymptote 代码](example/3-xmo19p2.asy)
+- [GeoGebra 源文件](example/3-2026-imo-p2.ggb)
+- [生成的 Asymptote 代码](example/3-2026-imo-p2.asy)
 
 ```powershell
-ggb2asy "example\3-xmo19p2.ggb" -o "example\3-xmo19p2.asy"
+ggb2asy "example\3-2026-imo-p2.ggb" -o "example\3-2026-imo-p2.asy"
 ```
 
 ## 常用选项
