@@ -28,7 +28,7 @@ def _escape_asy_string(value: str) -> str:
 def _escape_tex(value: str) -> str:
     replacements = {
         "\\": r"\textbackslash{}", "{": r"\{", "}": r"\}", "%": r"\%",
-        "#": r"\#", "&": r"\&", "_": r"\_", "^": r"\^{}", "~": r"\~{}", "$": r"\$",
+        "#": r"\#", "&": r"\&", "^": r"\^{}", "~": r"\~{}", "$": r"\$",
     }
     return "".join(replacements.get(char, char) for char in value)
 

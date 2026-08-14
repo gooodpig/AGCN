@@ -91,6 +91,15 @@ class ConverterTests(unittest.TestCase):
             self.assertIn("pair B = (4, 3);", code)
             self.assertIn("dot(A,", code)
 
+    def test_indexed_point_label_uses_tex_subscript(self):
+        xml = SAMPLE_XML.replace('label="A"', 'label="A_1"')
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "indexed-label.ggb"
+            make_ggb(path, xml)
+            code = convert_ggb_to_asy(path).code
+            self.assertIn('label("$A_1$", A_1,', code)
+            self.assertNotIn(r'$A\_1$', code)
+
     def test_segment_is_not_treated_as_infinite_line(self):
         with TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "sample.ggb"
