@@ -99,17 +99,16 @@ python -m grapher.cli "input.ggb" -o "output.asy"
 
 ## 示例
 
-`example` 文件夹提供三个可直接转换的 GeoGebra 文件。每个示例同时包含原始 `.ggb`、生成的 `.asy` 和编译预览图。
+`example` 文件夹提供三个可直接转换的 GeoGebra 文件。每个示例均包含原始 `.ggb` 和生成的 `.asy`；部分示例另附编译预览图。
 
-### 示例 1：自编题
+### 示例 1：Iran TST 2009
 
-![示例 1：自编题](example/1-preview.png)
-
-- [GeoGebra 源文件](example/1-自编题.ggb)
-- [生成的 Asymptote 代码](example/1-自编题.asy)
+- [GeoGebra 源文件](example/1-iran-tst-2009.ggb)
+- [生成的 Asymptote 代码](example/1-iran-tst-2009.asy)
+- 文件来源：[vEnhance/dragon — Iran.ggb](https://github.com/vEnhance/dragon/blob/master/Iran.ggb)
 
 ```powershell
-ggb2asy "example\1-自编题.ggb" -o "example\1-自编题.asy"
+ggb2asy "example\1-iran-tst-2009.ggb" -o "example\1-iran-tst-2009.asy"
 ```
 
 ### 示例 2：2026 希望联盟 3-5
