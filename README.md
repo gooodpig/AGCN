@@ -103,6 +103,8 @@ python -m grapher.cli "input.ggb" -o "output.asy"
 
 ### 示例 1：Iran TST 2009
 
+![示例 1：Iran TST 2009](example/1-preview.png)
+
 - [GeoGebra 源文件](example/1-iran-tst-2009.ggb)
 - [生成的 Asymptote 代码](example/1-iran-tst-2009.asy)
 - 文件来源：[vEnhance/dragon — Iran.ggb](https://github.com/vEnhance/dragon/blob/master/Iran.ggb)
