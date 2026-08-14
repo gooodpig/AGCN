@@ -1,16 +1,39 @@
-﻿# AGCN — Asymptote GeoGebra Converter Nya~
+﻿<p align="center">
+  <img src="web/public/agcn-icon.svg" width="150" alt="AGCN 项目图标">
+</p>
 
-AGCN（Asymptote GeoGebra Converter Nya~）将 GeoGebra `.ggb` 文件转换为结构清晰、可继续编辑的 Asymptote `.asy` 代码。
+<h1 align="center">AGCN</h1>
 
-工具直接读取 `.ggb` 压缩包中的 `geogebra.xml`，提取点、线、圆锥曲线、标签和样式，不依赖 GeoGebra 桌面程序。默认输出风格参考常见几何竞赛 Asymptote 文件：主体线保持黑色，同时自动保留虚实线和有意义的彩色对象。
+<p align="center"><strong>Asymptote GeoGebra Converter Nya~</strong></p>
 
-## 在线使用与部署
+<p align="center">
+  将 GeoGebra <code>.ggb</code> 文件转换为结构清晰、可继续编辑的 Asymptote <code>.asy</code> 代码。
+</p>
 
-- [在线转换 GeoGebra 文件](https://geogebra-to-asymptote.vercel.app/)
+<p align="center">
+  <a href="https://geogebra-to-asymptote.vercel.app/">在线体验</a> ·
+  <a href="#快速开始">快速开始</a> ·
+  <a href="docs/USAGE.zh-CN.md">使用手册</a> ·
+  <a href="#部署网页版">部署网页版</a>
+</p>
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fgooodpig%2Fgeogebra-asymptote-converter&root-directory=web&project-name=geogebra-asymptote-converter&repository-name=geogebra-asymptote-converter)
+<p align="center">
+  <img alt="Python 3.10+" src="https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white">
+  <img alt="Next.js" src="https://img.shields.io/badge/Web-Next.js-000000?logo=next.js">
+  <img alt="Vercel" src="https://img.shields.io/badge/Deploy-Vercel-000000?logo=vercel">
+</p>
 
-点击按钮会克隆本仓库，并以 `web` 作为 Vercel 项目根目录进行部署。
+AGCN 直接读取 `.ggb` 压缩包中的 `geogebra.xml`，提取点、线、圆锥曲线、标签和样式，不依赖 GeoGebra 桌面程序。默认输出面向数学排版：主体线保持黑色，同时保留虚实线和有意义的彩色对象。
+
+## 在线体验
+
+如果你很懒，可以直接使用[在线转换器](https://geogebra-to-asymptote.vercel.app/)：无需安装，上传后即可下载 `.asy` 文件。目前单个文件上限为 4 MB，文件仅在服务端临时处理，响应结束后立即删除。
+
+## 部署网页版
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fgooodpig%2FAGCN&root-directory=web&project-name=agcn&repository-name=agcn)
+
+按钮会克隆本仓库，并自动将 `web` 设为 Vercel 项目根目录。网页版包含 Next.js 前端和用于临时处理 `.ggb` 文件的 Python Function。
 
 ## 主要功能
 
@@ -110,6 +133,7 @@ ggb2asy "example\2-2026希望联盟3-5.ggb" -o "example\2-2026希望联盟3-5.as
 ```powershell
 ggb2asy "example\3-xmo19p2.ggb" -o "example\3-xmo19p2.asy"
 ```
+
 ## 常用选项
 
 ```text
