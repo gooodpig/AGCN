@@ -5,6 +5,7 @@ from pathlib import Path
 import sys
 
 from .converter import convert_ggb_to_asy
+from .interactive import generate_interactive_html
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -32,6 +33,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Write all points as numeric coordinates instead of symbolic constructions.",
     )
+    parser.add_argument(
+        "--interactive-output",
+        metavar="HTML",
+        help="Also create a self-contained interactive HTML preview with draggable free points.",
+    )
     args = parser.parse_args(argv)
 
     input_path = Path(args.input)
@@ -50,6 +56,10 @@ def main(argv: list[str] | None = None) -> int:
     for warning in result.warnings:
         print(f"warning: {warning}", file=sys.stderr)
     print(f"Wrote {output_path}")
+    if args.interactive_output:
+        interactive_path = Path(args.interactive_output)
+        generate_interactive_html(input_path, interactive_path)
+        print(f"Wrote {interactive_path}")
     return 0
 
 

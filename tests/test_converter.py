@@ -233,8 +233,8 @@ class ConverterTests(unittest.TestCase):
             self.assertIn("draw(box((-8.8, -4.95), (8.8, 4.95)), invisible);", code)
             self.assertIn("draw((-8, 0)--(8, 0), axispen, Arrow(3));", code)
             self.assertIn("draw((0, -4.5)--(0, 4.5), axispen, Arrow(3));", code)
-            self.assertIn('label("$x$", (8, 0), W);', code)
-            self.assertIn('label("$y$", (0, 4.5), S);', code)
+            self.assertIn('label("$x$", (8, 0), 1.5*NW);', code)
+            self.assertIn('label("$y$", (0, 4.5), 1.5*SE);', code)
 
     def test_example_style_header_and_reserved_point_names(self):
         xml = """<geogebra><construction>
@@ -556,6 +556,52 @@ class ConverterTests(unittest.TestCase):
             code = convert_ggb_to_asy(path, symbolic=False).code
             self.assertIn("pair M = (2, 0);", code)
             self.assertNotIn("pair M = (A+B)/2;", code)
+
+    def test_symbolic_triangle_centers_inline_circles_and_three_point_feet(self):
+        xml = """<geogebra><construction>
+          <element type="point" label="A"><show object="false" label="false"/><coords x="0" y="3" z="1"/></element>
+          <element type="point" label="B"><show object="false" label="false"/><coords x="-2" y="0" z="1"/></element>
+          <element type="point" label="C"><show object="false" label="false"/><coords x="2" y="0" z="1"/></element>
+          <command name="TriangleCenter"><input a0="A" a1="B" a2="C" a3="1"/><output a0="I"/></command>
+          <element type="point" label="I"><show object="true" label="true"/><coords x="0" y="1" z="1"/></element>
+          <command name="Center"><input a0="Incircle[A, B, C]"/><output a0="J"/></command>
+          <element type="point" label="J"><show object="true" label="true"/><coords x="0" y="1" z="1"/></element>
+          <command name="Foot"><input a0="I" a1="B" a2="C"/><output a0="D"/></command>
+          <element type="point" label="D"><show object="true" label="true"/><coords x="0" y="0" z="1"/></element>
+        </construction></geogebra>"""
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "expanded-symbolic.ggb"
+            make_ggb(path, xml)
+            code = convert_ggb_to_asy(path).code
+
+        self.assertIn("pair pI = incenter(A,B,C);", code)
+        self.assertIn("pair J = incenter(A,B,C);", code)
+        self.assertIn("pair D = foot(pI,B,C);", code)
+
+    def test_symbolic_intersections_use_the_correct_polygon_edges(self):
+        xml = """<geogebra><construction>
+          <element type="point" label="B"><show object="false" label="false"/><coords x="0" y="0" z="1"/></element>
+          <element type="point" label="C"><show object="false" label="false"/><coords x="4" y="0" z="1"/></element>
+          <element type="point" label="H"><show object="false" label="false"/><coords x="0" y="4" z="1"/></element>
+          <element type="point" label="E"><show object="false" label="false"/><coords x="-1" y="2" z="1"/></element>
+          <element type="point" label="F"><show object="false" label="false"/><coords x="5" y="2" z="1"/></element>
+          <command name="Polygon"><input a0="B" a1="C" a2="H"/><output a0="tri" a1="h" a2="b_1" a3="c_1"/></command>
+          <element type="polygon" label="tri"><show object="false" label="false"/></element>
+          <element type="segment" label="h"><show object="false" label="false"/></element>
+          <element type="segment" label="b_1"><show object="false" label="false"/></element>
+          <element type="segment" label="c_1"><show object="false" label="false"/></element>
+          <command name="Intersect"><input a0="Line[E, F]" a1="b_1"/><output a0="B_1"/></command>
+          <element type="point" label="B_1"><show object="true" label="true"/><coords x="2" y="2" z="1"/></element>
+          <command name="Intersect"><input a0="Line[E, F]" a1="c_1"/><output a0="C_1"/></command>
+          <element type="point" label="C_1"><show object="true" label="true"/><coords x="0" y="2" z="1"/></element>
+        </construction></geogebra>"""
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "polygon-edges.ggb"
+            make_ggb(path, xml)
+            code = convert_ggb_to_asy(path).code
+
+        self.assertIn("pair B_1 = extension(pE,pE+(F-pE),C,C+(H-C));", code)
+        self.assertIn("pair C_1 = extension(pE,pE+(F-pE),H,H+(B-H));", code)
 
     def test_line_bisector_is_not_treated_as_line_through_endpoints(self):
         xml = """<geogebra><construction>

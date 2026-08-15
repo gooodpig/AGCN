@@ -47,6 +47,7 @@ AGCN 直接读取 `.ggb` 压缩包中的 `geogebra.xml`，提取点、线、圆�
 - 将 GeoGebra 手工标签位置作为优先偏好，发生压线或碰撞时自动调整
 - 自动缩放画布，避免输出图片留白过多
 - 提供命令行工具和可复用的 Python API
+- 可额外生成离线交互 HTML，拖动独立描点并即时更新常见几何依赖
 - 默认优先保留中点、交点、垂足、圆心和三角形中心等符号构造，无法可靠重建时回退到数值坐标
 
 ## 环境要求
@@ -139,7 +140,7 @@ ggb2asy "example\3-2026-imo-p2.ggb" -o "example\3-2026-imo-p2.asy"
 ## 常用选项
 
 ```text
-ggb2asy INPUT [-o OUTPUT] [--preserve-style] [--coordinates-only] [--debug]
+ggb2asy INPUT [-o OUTPUT] [--preserve-style] [--coordinates-only] [--debug] [--interactive-output HTML]
 ```
 
 | 选项 | 作用 |
@@ -149,8 +150,21 @@ ggb2asy INPUT [-o OUTPUT] [--preserve-style] [--coordinates-only] [--debug]
 | `--preserve-style` | 精确保留 GeoGebra 颜色（包括灰色）和线宽 |
 | `--coordinates-only` | 禁用符号构造，将所有点直接写成数值坐标 |
 | `--debug` | 在输出中加入解析信息、警告和不支持对象的注释 |
+| `--interactive-output HTML` | 同时生成可离线打开、可拖动独立点的交互预览 |
 
 默认模式更适合数学排版：灰色主体线转为黑色，彩色曲线继续保留颜色，虚实线保持不变。
+
+## 交互预览
+
+在生成 `.asy` 的同时创建一个自包含 HTML：
+
+```powershell
+ggb2asy "input.ggb" -o "output.asy" --interactive-output "output-interactive.html"
+```
+
+直接用浏览器打开 `output-interactive.html` 即可。页面不加载 GeoGebra，也不需要联网；独立描点以及直线、线段、圆或圆弧上的 `Point` 约束点会显示为可拖动黑点，约束点拖动时自动投影回原路径。拖动后，中点、垂足、常见三角形中心、镜像、旋转、缩放、向量平移、交点和切线会在浏览器中重算，相关线段、直线、射线、多边形和圆同步更新。
+
+Asymptote 的 HTML/WebGL 后端主要用于三维视角旋转，本身不提供二维约束求解。交互预览因此采用与 `.asy` 相同的解析数据和排版样式，由 SVG/JavaScript 动态层完成拖动与依赖重算；最终用于论文或 LaTeX 的静态图仍以生成的 `.asy` 为准。
 
 ## 编译 Asymptote
 
@@ -171,7 +185,7 @@ asy -f eps "output.asy"
 ## Python API
 
 ```python
-from grapher import convert_ggb_to_asy
+from grapher import convert_ggb_to_asy, generate_interactive_html
 
 result = convert_ggb_to_asy(
     "input.ggb",
@@ -180,6 +194,8 @@ result = convert_ggb_to_asy(
     debug=False,
     symbolic=True,
 )
+
+generate_interactive_html("input.ggb", "output-interactive.html")
 
 print(result.warnings)
 ```
@@ -205,7 +221,7 @@ python -m unittest discover -s tests -v
 
 ## 当前限制
 
-- 转换目标是可编辑、适合排版的静态 Asymptote 图，不会复刻 GeoGebra 的动态交互
+- 交互 HTML 只重算已支持的常见构造；复杂轨迹、函数、一般圆锥曲线和高级 GeoGebra 命令仍以静态 `.asy` 为准
 - 复杂填充、透明度、图片、文本框和部分高级对象可能无法完整转换
 - 极其拥挤的图形仍可能需要手工微调少量标签
 - 一般二次曲线和隐式三次曲线通过 Asymptote `contour` 绘制，编译时间会略长

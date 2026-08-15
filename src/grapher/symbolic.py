@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
+import re
 from typing import Callable
 
 from .models import GgbObject
@@ -114,11 +115,48 @@ class SymbolicPointResolver:
         value = obj.attrs.get("value")
         return None if value is None else f"{float(value):.12g}"
 
+    @staticmethod
+    def _object_endpoint_names(obj: GgbObject) -> tuple[str, str] | None:
+        inputs = list(obj.attrs.get("inputs", []))
+        command = str(obj.attrs.get("command", "")).lower()
+        if command in {"polygon", "polyline"} and len(inputs) >= 2:
+            output_index = int(obj.attrs.get("command_output_index", 0))
+            if output_index > 0:
+                edge = output_index - 1
+                end = (edge + 1) % len(inputs) if command == "polygon" else edge + 1
+                if end < len(inputs):
+                    return inputs[edge], inputs[end]
+        if len(inputs) >= 2:
+            return inputs[0], inputs[1]
+        return None
+
+    def _object_line_endpoints(
+        self,
+        obj: GgbObject,
+    ) -> tuple[str, str, frozenset[str]] | None:
+        endpoint_names = self._object_endpoint_names(obj)
+        if endpoint_names:
+            first = self._point(endpoint_names[0])
+            second = self._point(endpoint_names[1])
+            if first and second:
+                return first[0], second[0], first[1] | second[1]
+        return None
+
     def _line(self, name: str) -> _LineGeometry | None:
         if name == "xAxis":
             return _LineGeometry("(0,0)", "(1,0)", frozenset())
         if name == "yAxis":
             return _LineGeometry("(0,0)", "(0,1)", frozenset())
+        inline = re.fullmatch(r"Line\[(.+?),\s*(.+?)\]", name, re.IGNORECASE)
+        if inline:
+            first = self._point(inline.group(1))
+            second = self._point(inline.group(2))
+            if first and second:
+                return _LineGeometry(
+                    first[0],
+                    f"{second[0]}-{first[0]}",
+                    first[1] | second[1],
+                )
         obj = self.objects_by_name.get(name)
         if obj is None:
             return None
@@ -135,15 +173,13 @@ class SymbolicPointResolver:
         if (
             obj.kind in {"line", "segment", "ray", "vector"}
             and command not in special_line_commands
-            and len(inputs) >= 2
         ):
-            first = self._point(inputs[0])
-            second = self._point(inputs[1])
-            if first and second:
-                dependencies = first[1] | second[1]
+            endpoints = self._object_line_endpoints(obj)
+            if endpoints:
+                first, second, dependencies = endpoints
                 return _LineGeometry(
-                    first[0],
-                    f"{second[0]}-{first[0]}",
+                    first,
+                    f"{second}-{first}",
                     dependencies,
                 )
 
@@ -190,6 +226,12 @@ class SymbolicPointResolver:
             return (0.0, 0.0), (1.0, 0.0)
         if name == "yAxis":
             return (0.0, 0.0), (0.0, 1.0)
+        inline = re.fullmatch(r"Line\[(.+?),\s*(.+?)\]", name, re.IGNORECASE)
+        if inline:
+            first = self.points.get(inline.group(1))
+            second = self.points.get(inline.group(2))
+            if first and second:
+                return first, (second[0] - first[0], second[1] - first[1])
         obj = self.objects_by_name.get(name)
         if obj is None:
             return None
@@ -202,9 +244,10 @@ class SymbolicPointResolver:
             "angularbisector",
             "anglebisector",
         }
-        if command not in special and len(inputs) >= 2:
-            first = self.points.get(inputs[0])
-            second = self.points.get(inputs[1])
+        if command not in special:
+            endpoint_names = self._object_endpoint_names(obj)
+            first = self.points.get(endpoint_names[0]) if endpoint_names else None
+            second = self.points.get(endpoint_names[1]) if endpoint_names else None
             if first and second:
                 return first, (second[0] - first[0], second[1] - first[1])
         if command in {"orthogonalline", "parallelline"} and len(inputs) >= 2:
@@ -250,7 +293,12 @@ class SymbolicPointResolver:
         if len(inputs) == 1:
             line = self.objects_by_name.get(inputs[0])
             if line is not None:
-                return self._numeric_line_endpoints(list(line.attrs.get("inputs", [])))
+                endpoint_names = self._object_endpoint_names(line)
+                if endpoint_names:
+                    first = self.points.get(endpoint_names[0])
+                    second = self.points.get(endpoint_names[1])
+                    if first and second:
+                        return first, second
         return None
 
     def _validated_line_intersection(
@@ -298,10 +346,24 @@ class SymbolicPointResolver:
         if len(inputs) == 1:
             line = self.objects_by_name.get(inputs[0])
             if line is not None:
-                return self._line_endpoints(list(line.attrs.get("inputs", [])))
+                return self._object_line_endpoints(line)
         return None
 
     def _circle(self, name: str) -> _PathGeometry | None:
+        inline = re.fullmatch(
+            r"(Incircle|Circle)\[(.+?),\s*(.+?),\s*(.+?)\]",
+            name,
+            re.IGNORECASE,
+        )
+        if inline:
+            refs = [self._point(inline.group(index)) for index in range(2, 5)]
+            if all(refs):
+                dependencies = refs[0][1] | refs[1][1] | refs[2][1]
+                helper = "incircle" if inline.group(1).lower() == "incircle" else "circumcircle"
+                return _PathGeometry(
+                    f"{helper}({refs[0][0]},{refs[1][0]},{refs[2][0]})",
+                    dependencies,
+                )
         obj = self.objects_by_name.get(name)
         if obj is None or obj.kind != "conic":
             return None
@@ -378,6 +440,20 @@ class SymbolicPointResolver:
                 )
 
         if command in {"center", "centre"} and inputs:
+            inline = re.fullmatch(
+                r"(Incircle|Circle)\[(.+?),\s*(.+?),\s*(.+?)\]",
+                inputs[0],
+                re.IGNORECASE,
+            )
+            if inline:
+                refs = [self._point(inline.group(index)) for index in range(2, 5)]
+                if all(refs):
+                    dependencies = refs[0][1] | refs[1][1] | refs[2][1]
+                    helper = "incenter" if inline.group(1).lower() == "incircle" else "circumcenter"
+                    return SymbolicPoint(
+                        f"{helper}({refs[0][0]},{refs[1][0]},{refs[2][0]})",
+                        dependencies,
+                    )
             circle = self.objects_by_name.get(inputs[0])
             if circle is not None:
                 circle_inputs = list(circle.attrs.get("inputs", []))
@@ -418,8 +494,36 @@ class SymbolicPointResolver:
                     dependencies,
                 )
 
+        if command == "trianglecenter" and len(inputs) >= 4:
+            refs = [self._point(item) for item in inputs[:3]]
+            index = self._numeric(inputs[3])
+            center_by_index = {
+                "1": "incenter",
+                "2": None,
+                "3": "circumcenter",
+                "4": "orthocenter",
+            }
+            normalized_index = None if index is None else f"{float(index):.12g}"
+            if all(refs) and normalized_index in center_by_index:
+                dependencies = refs[0][1] | refs[1][1] | refs[2][1]
+                helper = center_by_index[normalized_index]
+                code = (
+                    f"({refs[0][0]}+{refs[1][0]}+{refs[2][0]})/3"
+                    if helper is None
+                    else f"{helper}({refs[0][0]},{refs[1][0]},{refs[2][0]})"
+                )
+                return SymbolicPoint(code, dependencies)
+
         if command == "foot" and len(inputs) >= 2:
             point = self._point(inputs[0])
+            if len(inputs) >= 3:
+                first = self._point(inputs[1])
+                second = self._point(inputs[2])
+                if point and first and second:
+                    return SymbolicPoint(
+                        f"foot({point[0]},{first[0]},{second[0]})",
+                        point[1] | first[1] | second[1],
+                    )
             line = self._line(inputs[1])
             if point and line:
                 return SymbolicPoint(
@@ -446,7 +550,7 @@ class SymbolicPointResolver:
             point = self._point(inputs[0])
             vector = self.objects_by_name.get(inputs[1])
             if point and vector is not None:
-                endpoints = self._line_endpoints(list(vector.attrs.get("inputs", [])))
+                endpoints = self._object_line_endpoints(vector)
                 if endpoints:
                     first, second, dependencies = endpoints
                     return SymbolicPoint(

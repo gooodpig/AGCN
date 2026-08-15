@@ -118,7 +118,7 @@ python -m grapher.cli "input.ggb" -o "output.asy"
 完整格式：
 
 ```text
-ggb2asy INPUT [-o OUTPUT] [--preserve-style] [--coordinates-only] [--debug]
+ggb2asy INPUT [-o OUTPUT] [--preserve-style] [--coordinates-only] [--debug] [--interactive-output HTML]
 ```
 
 ### `INPUT`
@@ -185,6 +185,18 @@ pair H = orthocenter(A,B,C);
 ```powershell
 ggb2asy "triangle.ggb" -o "triangle.asy" --coordinates-only
 ```
+
+### `--interactive-output HTML`
+
+在静态 `.asy` 之外生成可拖动的离线 HTML 预览：
+
+```powershell
+ggb2asy "triangle.ggb" -o "triangle.asy" --interactive-output "triangle-interactive.html"
+```
+
+浏览器可直接打开该 HTML，不依赖 GeoGebra 网站或网络连接。独立描点以及直线、线段、圆和圆弧上的 `Point` 约束点可以拖动，约束点会自动投影回所属路径。中点、垂足、常见三角形中心、镜像、旋转、缩放、向量平移、交点、切线及对应线圆会即时重算。点统一显示为黑色，以贴近默认 Asymptote 输出。
+
+Asymptote 的 HTML/WebGL 交互主要控制三维摄像机，不负责重新求解二维几何约束，因此本工具使用与 `.asy` 相同的解析模型，通过内嵌 SVG/JavaScript 完成二维拖动。复杂函数、轨迹、一般圆锥曲线或暂不支持的命令仍保留在静态 `.asy` 中，页面侧栏会列出未动态化对象。
 
 ## 5. 输出代码结构
 
@@ -560,7 +572,7 @@ clip(box((-5, -3), (6, 5)));
 
 ## 13. 已知限制
 
-- 不保留 GeoGebra 的动态拖动和交互行为
+- 可选交互 HTML 支持独立描点和部分常见构造；尚不能完整复刻 GeoGebra 的全部动态命令
 - 复杂文本、公式文本框、图片和按钮尚未完整支持
 - 填充颜色、透明度和阴影可能无法精确复刻
 - 部分高级轨迹、样条曲线和三维对象可能被跳过
@@ -593,6 +605,7 @@ grapher/
 - `converter.py`：几何映射、样式处理、标签布局和 Asymptote 生成
 - `models.py`：对象、视口和转换结果数据结构
 - `cli.py`：命令行参数和文件输出
+- `interactive.py`：离线 SVG 交互预览和浏览器端几何重算
 - `__init__.py`：公开 Python API
 
 ## 15. 开发与测试
