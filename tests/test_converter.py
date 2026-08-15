@@ -603,6 +603,34 @@ class ConverterTests(unittest.TestCase):
         self.assertIn("pair B_1 = extension(pE,pE+(F-pE),C,C+(H-C));", code)
         self.assertIn("pair C_1 = extension(pE,pE+(F-pE),H,H+(B-H));", code)
 
+    def test_symbolic_intersection_of_reflected_lines_tracks_dependencies(self):
+        xml = """<geogebra><construction>
+          <element type="point" label="A"><show object="false" label="false"/><coords x="0" y="0" z="1"/></element>
+          <element type="point" label="B"><show object="false" label="false"/><coords x="1" y="0" z="1"/></element>
+          <element type="point" label="U"><show object="false" label="false"/><coords x="0" y="0" z="1"/></element>
+          <element type="point" label="V"><show object="false" label="false"/><coords x="1" y="1" z="1"/></element>
+          <element type="point" label="C"><show object="false" label="false"/><coords x="0" y="1" z="1"/></element>
+          <element type="point" label="D"><show object="false" label="false"/><coords x="1" y="1" z="1"/></element>
+          <command name="Line"><input a0="A" a1="B"/><output a0="l"/></command>
+          <element type="line" label="l"><show object="false" label="false"/></element>
+          <command name="Line"><input a0="U" a1="V"/><output a0="d"/></command>
+          <element type="line" label="d"><show object="false" label="false"/></element>
+          <command name="Mirror"><input a0="l" a1="d"/><output a0="m"/></command>
+          <element type="line" label="m"><show object="true" label="false"/><coords x="1" y="0" z="0"/></element>
+          <command name="Line"><input a0="C" a1="D"/><output a0="n"/></command>
+          <element type="line" label="n"><show object="true" label="false"/></element>
+          <command name="Intersect"><input a0="m" a1="n"/><output a0="Q"/></command>
+          <element type="point" label="Q"><show object="true" label="true"/><coords x="0" y="1" z="1"/></element>
+        </construction></geogebra>"""
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "reflected-lines.ggb"
+            make_ggb(path, xml)
+            code = convert_ggb_to_asy(path).code
+
+        self.assertIn("pair Q = extension(", code)
+        self.assertIn("foot(", code)
+        self.assertNotIn("pair Q = (0, 1);", code)
+
     def test_line_bisector_is_not_treated_as_line_through_endpoints(self):
         xml = """<geogebra><construction>
           <element type="point" label="A"><show object="false" label="false"/><coords x="0" y="0" z="1"/></element>

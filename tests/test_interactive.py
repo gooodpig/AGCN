@@ -32,6 +32,7 @@ class InteractiveOutputTests(unittest.TestCase):
             self.assertIn("function constrainMovable", page)
             self.assertIn("command==='tangent'", page)
             self.assertIn("command==='point'", page)
+            self.assertIn("command==='mirror'||command==='reflect'", page)
             self.assertIn("function chooseLabelLayout", page)
             self.assertIn("function appendLabelContent", page)
             self.assertIn("'baseline-shift':'sub'", page)

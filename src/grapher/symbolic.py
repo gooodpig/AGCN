@@ -169,6 +169,8 @@ class SymbolicPointResolver:
             "linebisector",
             "angularbisector",
             "anglebisector",
+            "mirror",
+            "reflect",
         }
         if (
             obj.kind in {"line", "segment", "ray", "vector"}
@@ -216,6 +218,32 @@ class SymbolicPointResolver:
                     f"bisectorpoint({first[0]},{vertex[0]},{third[0]})-{vertex[0]}",
                     dependencies,
                 )
+
+        if command in {"mirror", "reflect"} and len(inputs) >= 2:
+            source = self._line(inputs[0])
+            center = self._point(inputs[1])
+            if source and center:
+                return _LineGeometry(
+                    f"2*{center[0]}-({source.point})",
+                    f"-({source.direction})",
+                    source.dependencies | center[1],
+                )
+            axis = self._line(inputs[1])
+            if source and axis:
+                first = (
+                    f"2*foot({source.point},{axis.point},"
+                    f"{axis.point}+({axis.direction}))-({source.point})"
+                )
+                source_second = f"{source.point}+({source.direction})"
+                second = (
+                    f"2*foot({source_second},{axis.point},"
+                    f"{axis.point}+({axis.direction}))-({source_second})"
+                )
+                return _LineGeometry(
+                    first,
+                    f"({second})-({first})",
+                    source.dependencies | axis.dependencies,
+                )
         return None
 
     def _numeric_line(
@@ -243,6 +271,8 @@ class SymbolicPointResolver:
             "linebisector",
             "angularbisector",
             "anglebisector",
+            "mirror",
+            "reflect",
         }
         if command not in special:
             endpoint_names = self._object_endpoint_names(obj)
@@ -279,6 +309,37 @@ class SymbolicPointResolver:
                         first_vector[1] / first_length + third_vector[1] / third_length,
                     )
                     return vertex, direction
+        if command in {"mirror", "reflect"} and len(inputs) >= 2:
+            source = self._numeric_line(inputs[0])
+            center = self.points.get(inputs[1])
+            if source and center:
+                return (
+                    (2 * center[0] - source[0][0], 2 * center[1] - source[0][1]),
+                    (-source[1][0], -source[1][1]),
+                )
+            axis = self._numeric_line(inputs[1])
+            if source and axis:
+                def reflect(position: tuple[float, float]) -> tuple[float, float]:
+                    denominator = axis[1][0] ** 2 + axis[1][1] ** 2
+                    if denominator < 1e-20:
+                        return position
+                    scale = (
+                        (position[0] - axis[0][0]) * axis[1][0]
+                        + (position[1] - axis[0][1]) * axis[1][1]
+                    ) / denominator
+                    foot = (
+                        axis[0][0] + scale * axis[1][0],
+                        axis[0][1] + scale * axis[1][1],
+                    )
+                    return 2 * foot[0] - position[0], 2 * foot[1] - position[1]
+
+                first = reflect(source[0])
+                source_second = (
+                    source[0][0] + source[1][0],
+                    source[0][1] + source[1][1],
+                )
+                second = reflect(source_second)
+                return first, (second[0] - first[0], second[1] - first[1])
         return None
 
     def _numeric_line_endpoints(

@@ -221,6 +221,15 @@ _HTML_TEMPLATE = r'''<!doctype html>
         const firstLength=length(firstVector), thirdLength=length(thirdVector); if (firstLength<1e-12||thirdLength<1e-12) return null;
         return {point:second,direction:add(mul(firstVector,1/firstLength),mul(thirdVector,1/thirdLength))};
       }
+      if ((command==='mirror'||command==='reflect') && object.inputs.length>=2) {
+        const source=lineGeometry(object.inputs[0]); if (!source) return null;
+        const center=point(object.inputs[1]);
+        if (center) return {point:sub(mul(center,2),source.point),direction:mul(source.direction,-1)};
+        const axis=lineGeometry(object.inputs[1]); if (!axis) return null;
+        const first=sub(mul(projection(source.point,axis),2),source.point), sourceSecond=add(source.point,source.direction);
+        const second=sub(mul(projection(sourceSecond,axis),2),sourceSecond);
+        return {point:first,direction:sub(second,first)};
+      }
       if (command==='tangent' && object.inputs.length>=2) {
         const tangentPoint=point(object.inputs[0])||point(object.inputs[1]);
         const circle=circleGeometry(point(object.inputs[0])?object.inputs[1]:object.inputs[0]);
