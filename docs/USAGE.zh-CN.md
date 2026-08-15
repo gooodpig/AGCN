@@ -118,7 +118,7 @@ python -m grapher.cli "input.ggb" -o "output.asy"
 完整格式：
 
 ```text
-ggb2asy INPUT [-o OUTPUT] [--preserve-style] [--debug]
+ggb2asy INPUT [-o OUTPUT] [--preserve-style] [--coordinates-only] [--debug]
 ```
 
 ### `INPUT`
@@ -167,6 +167,24 @@ ggb2asy "triangle.ggb" -o "triangle.asy" --debug
 - 解析到的对象数量
 - 不支持或无法完整转换的对象
 - 缺少端点、矩阵或表达式时的警告
+
+### `--coordinates-only`
+
+默认情况下，转换器会像 Dragon 一样优先根据 GeoGebra 构造命令生成符号表达式。例如：
+
+```asy
+pair M = (A+B)/2;
+pair P = extension(A,B,C,D);
+pair H = orthocenter(A,B,C);
+```
+
+目前优先支持中点、直线交点、圆与直线或圆的交点、圆心、垂足、内心、外心、垂心、重心、镜像、平移、旋转和缩放。符号重建不安全、命令不支持或对象退化时，会自动回退到 `.ggb` 中保存的点坐标。
+
+如需完全使用旧版数值坐标输出，可运行：
+
+```powershell
+ggb2asy "triangle.ggb" -o "triangle.asy" --coordinates-only
+```
 
 ## 5. 输出代码结构
 
@@ -389,6 +407,7 @@ convert_ggb_to_asy(
     *,
     preserve_style=False,
     debug=False,
+    symbolic=True,
 )
 ```
 

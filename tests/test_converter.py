@@ -495,6 +495,90 @@ class ConverterTests(unittest.TestCase):
             self.assertEqual(asy_path.read_text(encoding="utf-8"), result.code)
             self.assertIn("// parsed objects: 5", result.code)
 
+    def test_symbolic_points_prefer_construction_commands(self):
+        xml = """<geogebra><construction>
+          <element type="point" label="A"><show object="false" label="false"/><coords x="0" y="0" z="1"/></element>
+          <element type="point" label="B"><show object="false" label="false"/><coords x="4" y="0" z="1"/></element>
+          <element type="point" label="C"><show object="false" label="false"/><coords x="0" y="4" z="1"/></element>
+          <command name="Midpoint"><input a0="A" a1="B"/><output a0="M"/></command>
+          <element type="point" label="M"><show object="true" label="true"/><coords x="2" y="0" z="1"/></element>
+          <command name="Line"><input a0="A" a1="C"/><output a0="l1"/></command>
+          <element type="line" label="l1"><show object="false" label="false"/></element>
+          <command name="Line"><input a0="B" a1="C"/><output a0="l2"/></command>
+          <element type="line" label="l2"><show object="false" label="false"/></element>
+          <command name="Intersect"><input a0="l1" a1="l2"/><output a0="P"/></command>
+          <element type="point" label="P"><show object="true" label="true"/><coords x="0" y="4" z="1"/></element>
+        </construction></geogebra>"""
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "symbolic.ggb"
+            make_ggb(path, xml)
+            code = convert_ggb_to_asy(path).code
+            self.assertIn("pair A = (0, 0);", code)
+            self.assertIn("pair B = (4, 0);", code)
+            self.assertIn("pair C = (0, 4);", code)
+            self.assertIn("pair M = (A+B)/2;", code)
+            self.assertIn("pair P = extension(A,A+(C-A),B,B+(C-B));", code)
+
+    def test_symbolic_circle_intersection_uses_coordinate_only_for_selection(self):
+        xml = """<geogebra><construction>
+          <element type="point" label="O"><show object="false" label="false"/><coords x="0" y="0" z="1"/></element>
+          <element type="point" label="A"><show object="false" label="false"/><coords x="2" y="0" z="1"/></element>
+          <element type="point" label="B"><show object="false" label="false"/><coords x="-3" y="0" z="1"/></element>
+          <element type="point" label="C"><show object="false" label="false"/><coords x="3" y="0" z="1"/></element>
+          <command name="Circle"><input a0="O" a1="A"/><output a0="c"/></command>
+          <element type="conic" label="c"><show object="true" label="false"/><matrix A0="1" A1="1" A2="-4" A3="0" A4="0" A5="0"/></element>
+          <command name="Line"><input a0="B" a1="C"/><output a0="l"/></command>
+          <element type="line" label="l"><show object="true" label="false"/></element>
+          <command name="Intersect"><input a0="c" a1="l" a2="2"/><output a0="P"/></command>
+          <element type="point" label="P"><show object="true" label="true"/><coords x="2" y="0" z="1"/></element>
+        </construction></geogebra>"""
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "circle-intersection.ggb"
+            make_ggb(path, xml)
+            code = convert_ggb_to_asy(path).code
+            self.assertIn("pair closestIntersection(path first, path second, pair expected)", code)
+            self.assertIn(
+                "pair P = closestIntersection(circle(pO,abs(A-pO)),",
+                code,
+            )
+            self.assertIn(",(2, 0));", code)
+
+    def test_coordinates_only_disables_symbolic_points(self):
+        xml = """<geogebra><construction>
+          <element type="point" label="A"><show object="true" label="false"/><coords x="0" y="0" z="1"/></element>
+          <element type="point" label="B"><show object="true" label="false"/><coords x="4" y="0" z="1"/></element>
+          <command name="Midpoint"><input a0="A" a1="B"/><output a0="M"/></command>
+          <element type="point" label="M"><show object="true" label="true"/><coords x="2" y="0" z="1"/></element>
+        </construction></geogebra>"""
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "coordinates.ggb"
+            make_ggb(path, xml)
+            code = convert_ggb_to_asy(path, symbolic=False).code
+            self.assertIn("pair M = (2, 0);", code)
+            self.assertNotIn("pair M = (A+B)/2;", code)
+
+    def test_line_bisector_is_not_treated_as_line_through_endpoints(self):
+        xml = """<geogebra><construction>
+          <element type="point" label="A"><show object="false" label="false"/><coords x="0" y="0" z="1"/></element>
+          <element type="point" label="B"><show object="false" label="false"/><coords x="4" y="0" z="1"/></element>
+          <element type="point" label="C"><show object="false" label="false"/><coords x="0" y="0" z="1"/></element>
+          <element type="point" label="D"><show object="false" label="false"/><coords x="0" y="2" z="1"/></element>
+          <command name="LineBisector"><input a0="A" a1="B"/><output a0="m1"/></command>
+          <element type="line" label="m1"><show object="false" label="false"/></element>
+          <command name="LineBisector"><input a0="C" a1="D"/><output a0="m2"/></command>
+          <element type="line" label="m2"><show object="false" label="false"/></element>
+          <command name="Intersect"><input a0="m1" a1="m2"/><output a0="P"/></command>
+          <element type="point" label="P"><show object="true" label="true"/><coords x="2" y="1" z="1"/></element>
+        </construction></geogebra>"""
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "bisectors.ggb"
+            make_ggb(path, xml)
+            code = convert_ggb_to_asy(path).code
+            self.assertIn(
+                "extension((A+B)/2,(A+B)/2+(rotate(90)*(B-A)),",
+                code,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

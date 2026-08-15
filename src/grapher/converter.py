@@ -8,6 +8,7 @@ import unicodedata
 
 from .models import AsyResult, GgbObject, Viewport
 from .parser import ParsedGgb, parse_ggb
+from .symbolic import INTERSECTION_HELPER, SymbolicPointResolver
 
 
 _CONIC_KINDS = {"conic", "conicpart", "implicitpoly"}
@@ -779,6 +780,7 @@ class _Generator:
     parsed: ParsedGgb
     preserve_style: bool
     debug: bool
+    symbolic: bool
 
     def _visible_inputs(self, obj: GgbObject, points: dict[str, tuple[float, float]]) -> list[str]:
         return [name for name in obj.attrs.get("inputs", []) if name in points]
@@ -1311,6 +1313,15 @@ class _Generator:
             if obj.visible:
                 required_points.update(self._visible_inputs(obj, points))
 
+        symbolic_resolver = SymbolicPointResolver(
+            objects,
+            points,
+            name_map.get,
+            _pair_literal,
+        )
+        if self.symbolic:
+            required_points = symbolic_resolver.dependency_closure(required_points)
+
         visible_conics = [obj for obj in objects if obj.visible and obj.kind in _CONIC_KINDS]
         needs_contour = any(
             obj.kind != "conicpart" and _circle_from_matrix(obj.attrs.get("matrix", {})) is None
@@ -1345,9 +1356,28 @@ class _Generator:
                 '',
             ])
 
-        for obj in objects:
-            if obj.kind == "point" and obj.name in required_points:
-                body.append(f'pair {name_map.get(obj.name)} = {_pair_literal(points[obj.name])};')
+        if self.symbolic and any(
+            symbolic_resolver.resolve(name).needs_intersection_helper
+            for name in required_points
+        ):
+            body.extend([INTERSECTION_HELPER, ""])
+
+        point_order = (
+            symbolic_resolver.declaration_order(required_points)
+            if self.symbolic
+            else [
+                obj.name
+                for obj in objects
+                if obj.kind == "point" and obj.name in required_points
+            ]
+        )
+        for name in point_order:
+            expression = (
+                symbolic_resolver.resolve(name).code
+                if self.symbolic
+                else _pair_literal(points[name])
+            )
+            body.append(f"pair {name_map.get(name)} = {expression};")
 
         functions: list[str] = []
         drawings: list[str] = []
@@ -1574,9 +1604,15 @@ def convert_ggb_to_asy(
     *,
     preserve_style: bool = False,
     debug: bool = False,
+    symbolic: bool = True,
 ) -> AsyResult:
     parsed = parse_ggb(input_path)
-    result = _Generator(parsed, preserve_style=preserve_style, debug=debug).build()
+    result = _Generator(
+        parsed,
+        preserve_style=preserve_style,
+        debug=debug,
+        symbolic=symbolic,
+    ).build()
     if output_path is not None:
         Path(output_path).write_text(result.code, encoding="utf-8")
     return result

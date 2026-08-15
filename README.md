@@ -47,6 +47,7 @@ AGCN 直接读取 `.ggb` 压缩包中的 `geogebra.xml`，提取点、线、圆�
 - 将 GeoGebra 手工标签位置作为优先偏好，发生压线或碰撞时自动调整
 - 自动缩放画布，避免输出图片留白过多
 - 提供命令行工具和可复用的 Python API
+- 默认优先保留中点、交点、垂足、圆心和三角形中心等符号构造，无法可靠重建时回退到数值坐标
 
 ## 环境要求
 
@@ -138,7 +139,7 @@ ggb2asy "example\3-2026-imo-p2.ggb" -o "example\3-2026-imo-p2.asy"
 ## 常用选项
 
 ```text
-ggb2asy INPUT [-o OUTPUT] [--preserve-style] [--debug]
+ggb2asy INPUT [-o OUTPUT] [--preserve-style] [--coordinates-only] [--debug]
 ```
 
 | 选项 | 作用 |
@@ -146,6 +147,7 @@ ggb2asy INPUT [-o OUTPUT] [--preserve-style] [--debug]
 | `INPUT` | 输入的 GeoGebra `.ggb` 文件 |
 | `-o`, `--output` | 指定输出 `.asy` 文件 |
 | `--preserve-style` | 精确保留 GeoGebra 颜色（包括灰色）和线宽 |
+| `--coordinates-only` | 禁用符号构造，将所有点直接写成数值坐标 |
 | `--debug` | 在输出中加入解析信息、警告和不支持对象的注释 |
 
 默认模式更适合数学排版：灰色主体线转为黑色，彩色曲线继续保留颜色，虚实线保持不变。
@@ -176,6 +178,7 @@ result = convert_ggb_to_asy(
     "output.asy",
     preserve_style=False,
     debug=False,
+    symbolic=True,
 )
 
 print(result.warnings)

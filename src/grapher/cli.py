@@ -27,6 +27,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Add parser details and unsupported-object comments to the output.",
     )
+    parser.add_argument(
+        "--coordinates-only",
+        action="store_true",
+        help="Write all points as numeric coordinates instead of symbolic constructions.",
+    )
     args = parser.parse_args(argv)
 
     input_path = Path(args.input)
@@ -37,6 +42,7 @@ def main(argv: list[str] | None = None) -> int:
             output_path,
             preserve_style=args.preserve_style,
             debug=args.debug,
+            symbolic=not args.coordinates_only,
         )
     except (OSError, ValueError) as error:
         parser.error(str(error))
